@@ -64,16 +64,10 @@ export function Help() {
                 <kbd>Shift</kbd> + <kbd>Barra de Espaço</kbd>
               </div>
               <p className='help-note'>
-                ⚠️ <strong>Nota:</strong> Atualmente, o LilacKeys funciona como
-                um gerenciador de macros. Para usar as macros em outros sites,
-                você precisará de uma extensão do navegador. Veja o arquivo{' '}
-                <code>CHROME_EXTENSION.md</code> para instruções de como criar a
-                extensão.
-              </p>
-              <p className='help-note'>
                 💡 <strong>Dica:</strong> Quando a extensão estiver instalada,
                 você poderá digitar o atalho (ex: "/oi") em qualquer campo de
-                texto e pressionar <kbd>Shift</kbd> + <kbd>Barra de Espaço</kbd>
+                texto e pressionar <kbd>"Shift"</kbd> +{' '}
+                <kbd>"Barra de Espaço" </kbd>
                 para expandir a macro automaticamente.
               </p>
             </div>
@@ -126,7 +120,7 @@ export function Help() {
               <strong>Formato TXT:</strong> Cada linha representa uma macro,
               separada por tabulação:
               <code className='help-code'>
-                Nome da Macro /atalho Texto expandido
+                Nome da Macro / atalho Texto expandido
               </code>
             </div>
           </div>
