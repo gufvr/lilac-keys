@@ -3,22 +3,19 @@ import { Macro } from '../types/macro'
 const STORAGE_KEY = 'lilac-keys-macros'
 
 export class StorageService {
-  static saveMacros(macros: Macro[]): void {
+  static async saveMacros(macros: Macro[]): Promise<void> {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(macros))
+      await chrome.storage.local.set({ [STORAGE_KEY]: macros })
     } catch (error) {
       console.error('Erro ao salvar macros:', error)
       throw new Error('Não foi possível salvar as macros')
     }
   }
 
-  static loadMacros(): Macro[] {
+  static async loadMacros(): Promise<Macro[]> {
     try {
-      const data = localStorage.getItem(STORAGE_KEY)
-      if (!data) {
-        return []
-      }
-      return JSON.parse(data) as Macro[]
+      const result = await chrome.storage.local.get(STORAGE_KEY)
+      return result[STORAGE_KEY] || []
     } catch (error) {
       console.error('Erro ao carregar macros:', error)
       return []
