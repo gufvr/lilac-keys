@@ -1,0 +1,50 @@
+.macro-list {
+  margin-top: 2rem;
+}
+
+.macro-list-header {
+  margin-bottom: 1.5rem;
+}
+
+.macro-list-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.macro-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.macro-list-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-tertiary);
+}
+
+.macro-list-empty .material-symbols-outlined {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.macro-list-empty p {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+}
+
+.macro-list-empty-hint {
+  font-size: 0.875rem !important;
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 768px) {
+  .macro-list-grid {
+    grid-template-columns: 1fr;
+  }
+}

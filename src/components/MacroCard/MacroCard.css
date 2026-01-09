@@ -1,0 +1,104 @@
+.macro-card {
+  margin-bottom: 1rem;
+}
+
+.macro-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.macro-card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0;
+}
+
+.macro-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  transition: all 0.2s ease;
+}
+
+.btn-icon:hover {
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.btn-icon-danger:hover {
+  background-color: var(--color-error);
+  color: white;
+}
+
+.macro-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.macro-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.macro-card-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.macro-card-label .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.macro-card-shortcut {
+  background-color: var(--color-bg-tertiary);
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.macro-card-text {
+  margin: 0;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+@media (max-width: 768px) {
+  .macro-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .macro-card-actions {
+    align-self: flex-end;
+  }
+}

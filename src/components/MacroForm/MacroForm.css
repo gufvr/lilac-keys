@@ -1,0 +1,70 @@
+.macro-form-container {
+  margin-bottom: 2rem;
+}
+
+.macro-form {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.macro-form-header {
+  margin-bottom: 1.5rem;
+}
+
+.macro-form-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.macro-form-error {
+  background-color: var(--color-error);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.macro-form-field {
+  margin-bottom: 1.5rem;
+}
+
+.macro-form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+}
+
+.macro-form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+}
+
+.macro-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .macro-form-actions {
+    flex-direction: column;
+  }
+
+  .macro-form-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
