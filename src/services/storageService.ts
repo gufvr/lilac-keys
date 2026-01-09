@@ -2,6 +2,10 @@ import { Macro } from '../types/macro'
 
 const STORAGE_KEY = 'lilac-keys-macros'
 
+type StorageResult = {
+  [STORAGE_KEY]?: Macro[]
+}
+
 export class StorageService {
   static async saveMacros(macros: Macro[]): Promise<void> {
     try {
@@ -14,17 +18,20 @@ export class StorageService {
 
   static async loadMacros(): Promise<Macro[]> {
     try {
-      const result = await chrome.storage.local.get(STORAGE_KEY)
-      return result[STORAGE_KEY] || []
+      const result = (await chrome.storage.local.get(
+        STORAGE_KEY
+      )) as StorageResult
+
+      return result[STORAGE_KEY] ?? []
     } catch (error) {
       console.error('Erro ao carregar macros:', error)
       return []
     }
   }
 
-  static clearMacros(): void {
+  static async clearMacros(): Promise<void> {
     try {
-      localStorage.removeItem(STORAGE_KEY)
+      await chrome.storage.local.remove(STORAGE_KEY)
     } catch (error) {
       console.error('Erro ao limpar macros:', error)
     }
