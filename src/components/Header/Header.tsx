@@ -9,7 +9,7 @@ export function Header() {
       <div className='container'>
         <div className='header-content'>
           <h1 className='header-title'>
-            <span className='material-symbols-outlined'>keyboard</span>
+            <span className='material-symbols-outlined'>local_florist</span>{' '}
             LilacKeys
           </h1>
           <button
