@@ -8,9 +8,13 @@ export function useMacros() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loadedMacros = StorageService.loadMacros()
-    setMacros(loadedMacros)
-    setLoading(false)
+    async function load() {
+      const loadedMacros = await StorageService.loadMacros()
+      setMacros(loadedMacros)
+      setLoading(false)
+    }
+
+    load()
   }, [])
 
   useEffect(() => {
