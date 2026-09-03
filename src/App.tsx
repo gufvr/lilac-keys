@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { useMacros } from './hooks/useMacros'
-import { Macro } from './types/macro'
-import { Header } from './components/Header/Header'
-import { MacroForm } from './components/MacroForm/MacroForm'
-import { MacroList } from './components/MacroList/MacroList'
-import { ImportExport } from './components/ImportExport/ImportExport'
-import { Help } from './components/Help/Help'
-import './App.css'
+import { useEffect, useState } from "react";
+import { useMacros } from "./hooks/useMacros";
+import { Macro } from "./types/macro";
+import { Header } from "./components/Header/Header";
+import { MacroForm } from "./components/MacroForm/MacroForm";
+import { MacroList } from "./components/MacroList/MacroList";
+import { ImportExport } from "./components/ImportExport/ImportExport";
+import { Help } from "./components/Help/Help";
+import "./App.css";
 
 function App() {
   const {
@@ -16,51 +16,57 @@ function App() {
     updateMacro,
     deleteMacro,
     replaceMacros,
-  } = useMacros()
-  const [editingMacro, setEditingMacro] = useState<Macro | undefined>(undefined)
+  } = useMacros();
+  const [editingMacro, setEditingMacro] = useState<Macro | undefined>(
+    undefined,
+  );
 
-  const handleFormSubmit = (data: Omit<Macro, 'id'>) => {
+  useEffect(() => {
+    void chrome.runtime.sendMessage({ type: "inject-content-script" });
+  }, []);
+
+  const handleFormSubmit = (data: Omit<Macro, "id">) => {
     if (editingMacro) {
-      return updateMacro(editingMacro.id, data)
+      return updateMacro(editingMacro.id, data);
     } else {
-      return createMacro(data)
+      return createMacro(data);
     }
-  }
+  };
 
   const handleFormCancel = () => {
-    setEditingMacro(undefined)
-  }
+    setEditingMacro(undefined);
+  };
 
   const handleEdit = (macro: Macro) => {
-    setEditingMacro(macro)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+    setEditingMacro(macro);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const handleDelete = (id: string) => {
-    deleteMacro(id)
+    deleteMacro(id);
     if (editingMacro?.id === id) {
-      setEditingMacro(undefined)
+      setEditingMacro(undefined);
     }
-  }
+  };
 
   const handleImport = (importedMacros: Macro[]) => {
-    replaceMacros(importedMacros)
-  }
+    replaceMacros(importedMacros);
+  };
 
   if (loading) {
     return (
-      <div className='app-loading'>
-        <span className='material-symbols-outlined'>hourglass_empty</span>
+      <div className="app-loading">
+        <span className="material-symbols-outlined">hourglass_empty</span>
         <p>Carregando...</p>
       </div>
-    )
+    );
   }
 
   return (
-    <div className='app'>
+    <div className="app">
       <Header />
-      <main className='app-main'>
-        <div className='container'>
+      <main className="app-main">
+        <div className="container">
           <Help />
           <ImportExport macros={macros} onImport={handleImport} />
           <MacroForm
@@ -77,7 +83,7 @@ function App() {
         </div>
       </main>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
