@@ -5,8 +5,6 @@ type ProKeysSnippet = {
   body: string;
 };
 
-type ImportedSnippet = Partial<ProKeysSnippet> & object;
-
 export function exportMacros(
   macros: Macro[],
   format: "json" | "txt" = "json",
@@ -61,6 +59,13 @@ export async function importMacros(file: File): Promise<Macro[]> {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith(".txt")) {
+          const proKeysMacros = parseProKeysText(content);
+
+          if (proKeysMacros) {
+            resolve(proKeysMacros);
+            return;
+          }
+
           const lines = content
             .split("\n")
             .filter((line) => line.trim().length > 0);
@@ -86,20 +91,10 @@ export async function importMacros(file: File): Promise<Macro[]> {
 
         const parsed = JSON.parse(content);
 
-        if (parsed?.snippets && Array.isArray(parsed.snippets)) {
-          const snippets = parsed.snippets.filter(
-            (item: ImportedSnippet) =>
-              typeof item.name === "string" && typeof item.body === "string",
-          );
+        const proKeysMacros = parseProKeysData(parsed);
 
-          const macros: Macro[] = snippets.map((snippet: ProKeysSnippet) => ({
-            id: crypto.randomUUID(),
-            nome: snippet.name,
-            atalho: `@${snippet.name.toLowerCase()}`,
-            textoExpandido: stripHtml(snippet.body),
-          }));
-
-          resolve(macros);
+        if (proKeysMacros) {
+          resolve(proKeysMacros);
           return;
         }
 
@@ -145,4 +140,95 @@ export async function importMacros(file: File): Promise<Macro[]> {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").trim();
+}
+
+function parseProKeysText(content: string): Macro[] | null {
+  const trimmedContent = content.trim();
+
+  try {
+    const parsed = JSON.parse(trimmedContent);
+    return parseProKeysData(parsed);
+  } catch {
+    const snippets = extractJsonObjects(trimmedContent);
+
+    if (snippets.length === 0) {
+      return null;
+    }
+
+    return parseProKeysData(snippets);
+  }
+}
+
+function extractJsonObjects(content: string): unknown[] {
+  const objects: unknown[] = [];
+  let objectStart = -1;
+  let depth = 0;
+  let insideString = false;
+  let isEscaped = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+
+    if (insideString) {
+      if (isEscaped) {
+        isEscaped = false;
+      } else if (character === "\\") {
+        isEscaped = true;
+      } else if (character === '"') {
+        insideString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      insideString = true;
+    } else if (character === "{" && depth === 0) {
+      objectStart = index;
+      depth = 1;
+    } else if (character === "{" && depth > 0) {
+      depth += 1;
+    } else if (character === "}" && depth > 0) {
+      depth -= 1;
+
+      if (depth === 0 && objectStart >= 0) {
+        const objectText = content.slice(objectStart, index + 1);
+
+        try {
+          objects.push(JSON.parse(objectText.replace(/,\s*}/g, "}")));
+        } catch {
+          // Ignora blocos que não possuem JSON válido.
+        }
+
+        objectStart = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function parseProKeysData(data: unknown): Macro[] | null {
+  const snippets =
+    typeof data === "object" && data !== null && "snippets" in data
+      ? (data as { snippets?: unknown }).snippets
+      : data;
+
+  if (!Array.isArray(snippets)) return null;
+
+  const validSnippets = snippets.filter(
+    (item): item is ProKeysSnippet =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as ProKeysSnippet).name === "string" &&
+      typeof (item as ProKeysSnippet).body === "string",
+  );
+
+  if (validSnippets.length === 0) return null;
+
+  return validSnippets.map((snippet) => ({
+    id: crypto.randomUUID(),
+    nome: snippet.name.trim(),
+    atalho: snippet.name.trim(),
+    textoExpandido: stripHtml(snippet.body),
+  }));
 }
