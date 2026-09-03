@@ -3,17 +3,10 @@
   "name": "LilacKeys",
   "version": "1.0.0",
   "description": "Gerenciador de macros de texto",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "scripting"],
   "action": {
     "default_popup": "index.html"
   },
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
-      "run_at": "document_end"
-    }
-  ],
   "background": {
     "service_worker": "background.js"
   }
