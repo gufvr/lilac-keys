@@ -5,9 +5,17 @@ interface MacroCardProps {
   macro: Macro;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
+  selected?: boolean;
+  onSelect?: (id: string) => void;
 }
 
-export function MacroCard({ macro, onEdit, onDelete }: MacroCardProps) {
+export function MacroCard({
+  macro,
+  onEdit,
+  onDelete,
+  selected = false,
+  onSelect,
+}: MacroCardProps) {
   const handleDelete = () => {
     if (
       window.confirm(`Tem certeza que deseja excluir a macro "${macro.nome}"?`)
@@ -19,6 +27,14 @@ export function MacroCard({ macro, onEdit, onDelete }: MacroCardProps) {
   return (
     <div className="macro-card card">
       <div className="macro-card-header">
+        {onSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onSelect(macro.id)}
+            aria-label={`Selecionar ${macro.nome}`}
+          />
+        )}
         <h3 className="macro-card-title">{macro.nome}</h3>
         <div className="macro-card-actions">
           <button

@@ -2,7 +2,14 @@ import { Macro } from "../types/macro";
 
 const STORAGE_KEY = "lilac-keys-macros";
 
-document.addEventListener("keydown", async (e) => {
+document.addEventListener("keydown", (e) => {
+  void handleKeydown(e).catch((error: unknown) => {
+    if (isExtensionContextInvalidated(error)) return;
+    console.error("LilacKeys: erro ao processar atalho", error);
+  });
+});
+
+async function handleKeydown(e: KeyboardEvent): Promise<void> {
   if (!(e.key === " " && e.shiftKey)) return;
 
   const el = document.activeElement;
@@ -21,10 +28,46 @@ document.addEventListener("keydown", async (e) => {
   const valueBeforeCursor = plainTextElement
     ? plainTextElement.value.slice(0, start)
     : getEditableTextBeforeCursor(richTextElement!);
-  const { [STORAGE_KEY]: macros = [] } =
-    await chrome.storage.local.get(STORAGE_KEY);
+  try {
+    const macros = await loadMacros();
+    expandMacro(macros, e, plainTextElement, start, valueBeforeCursor);
+  } catch (error) {
+    console.error("LilacKeys: falha ao carregar macros", error);
+  }
+}
+
+function loadMacros(): Promise<Macro[]> {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(STORAGE_KEY, (result) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          if (!isExtensionContextInvalidated(error)) {
+            console.error("LilacKeys: falha ao carregar macros", error);
+          }
+          resolve([]);
+          return;
+        }
+        resolve((result[STORAGE_KEY] as Macro[] | undefined) ?? []);
+      });
+    } catch (error) {
+      if (!isExtensionContextInvalidated(error)) {
+        console.error("LilacKeys: falha ao carregar macros", error);
+      }
+      resolve([]);
+    }
+  });
+}
+
+function expandMacro(
+  macros: Macro[],
+  e: KeyboardEvent,
+  plainTextElement: HTMLInputElement | HTMLTextAreaElement | null,
+  start: number,
+  valueBeforeCursor: string,
+): void {
   const normalizedValueBeforeCursor = valueBeforeCursor.toLowerCase();
-  const macro = (macros as Macro[]).find((item) =>
+  const macro = macros.find((item) =>
     normalizedValueBeforeCursor.endsWith(item.atalho.toLowerCase()),
   );
 
@@ -45,7 +88,11 @@ document.addEventListener("keydown", async (e) => {
   selectCharactersBeforeCursor(macro.atalho.length);
   document.execCommand("delete", false);
   document.execCommand("insertHTML", false, macro.textoExpandido);
-});
+}
+
+function isExtensionContextInvalidated(error: unknown): boolean {
+  return String(error).includes("Extension context invalidated");
+}
 
 function selectCharactersBeforeCursor(length: number): void {
   const selection = window.getSelection();

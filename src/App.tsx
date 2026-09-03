@@ -16,6 +16,10 @@ function App() {
     updateMacro,
     deleteMacro,
     replaceMacros,
+    folders,
+    createFolder,
+    deleteSelected,
+    moveSelected,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>(
     undefined,
@@ -49,6 +53,13 @@ function App() {
     replaceMacros(importedMacros);
   };
 
+  const handleCreateFolder = () => {
+    const name = window.prompt("Nome da nova pasta:");
+    if (name === null) return;
+    const result = createFolder(name);
+    if (!result.success) window.alert(result.error);
+  };
+
   if (loading) {
     return (
       <div className="app-loading">
@@ -64,17 +75,26 @@ function App() {
       <main className="app-main">
         <div className="container">
           <Help />
-          <ImportExport macros={macros} onImport={handleImport} />
+          <ImportExport
+            macros={macros}
+            folders={folders}
+            onImport={handleImport}
+          />
           <MacroForm
             macro={editingMacro}
             onSubmit={handleFormSubmit}
             onCancel={handleFormCancel}
             onSuccess={handleFormCancel}
+            folders={folders}
           />
           <MacroList
             macros={macros}
+            folders={folders}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onCreateFolder={handleCreateFolder}
+            onDeleteSelected={deleteSelected}
+            onMoveSelected={moveSelected}
           />
         </div>
       </main>

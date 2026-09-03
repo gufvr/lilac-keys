@@ -1,13 +1,17 @@
-import { Macro } from "../types/macro";
+import { Folder, Macro } from "../types/macro";
 
 type ProKeysSnippet = {
   name: string;
   body: string;
+  timestamp?: number;
 };
+
+type ProKeysFolder = [string, number, ...ProKeysSnippet[]];
 
 export function exportMacros(
   macros: Macro[],
   format: "json" | "txt" = "json",
+  folders: Folder[] = [],
 ): void {
   try {
     let dataStr: string;
@@ -27,7 +31,32 @@ export function exportMacros(
       mimeType = "text/plain";
       extension = "txt";
     } else {
-      dataStr = JSON.stringify(macros, null, 2);
+      const groups = folders.map(
+        (folder): ProKeysFolder => [
+          folder.name,
+          folder.createdAt,
+          ...macros
+            .filter((macro) => macro.folderId === folder.id)
+            .map((macro) => ({
+              name: macro.atalho,
+              body: macro.textoExpandido,
+              timestamp: Date.now(),
+            })),
+        ],
+      );
+      const unfiled = macros.filter((macro) => !macro.folderId);
+      if (unfiled.length > 0) {
+        groups.push([
+          "",
+          Date.now(),
+          ...unfiled.map((macro) => ({
+            name: macro.atalho,
+            body: macro.textoExpandido,
+            timestamp: Date.now(),
+          })),
+        ]);
+      }
+      dataStr = JSON.stringify(groups, null, 2);
       mimeType = "application/json";
       extension = "json";
     }
@@ -208,6 +237,25 @@ function extractJsonObjects(content: string): unknown[] {
 }
 
 function parseProKeysData(data: unknown): Macro[] | null {
+  if (Array.isArray(data) && data.every((item) => Array.isArray(item))) {
+    const folders = data as unknown[][];
+    const nestedMacros = folders.flatMap((folder) => {
+      const folderName = typeof folder[0] === "string" ? folder[0] : "";
+      return folder.slice(2).flatMap((item) => {
+        if (!isProKeysSnippet(item)) return [];
+        return [
+          {
+            id: crypto.randomUUID(),
+            nome: item.name.trim(),
+            atalho: item.name.trim(),
+            textoExpandido: stripHtml(item.body),
+            ...(folderName ? { folderName } : {}),
+          },
+        ];
+      });
+    });
+    return nestedMacros.length > 0 ? nestedMacros : null;
+  }
   const snippets =
     typeof data === "object" && data !== null && "snippets" in data
       ? (data as { snippets?: unknown }).snippets
@@ -231,4 +279,13 @@ function parseProKeysData(data: unknown): Macro[] | null {
     atalho: snippet.name.trim(),
     textoExpandido: stripHtml(snippet.body),
   }));
+}
+
+function isProKeysSnippet(item: unknown): item is ProKeysSnippet {
+  return (
+    typeof item === "object" &&
+    item !== null &&
+    typeof (item as ProKeysSnippet).name === "string" &&
+    typeof (item as ProKeysSnippet).body === "string"
+  );
 }

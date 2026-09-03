@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from "react";
-import { Macro } from "../../types/macro";
+import { Folder, Macro } from "../../types/macro";
 import { RichTextEditor } from "../RichTextEditor";
 import "./MacroForm.css";
 
@@ -8,6 +8,7 @@ interface MacroFormProps {
   onSubmit: (data: Omit<Macro, "id">) => { success: boolean; error?: string };
   onCancel: () => void;
   onSuccess?: () => void;
+  folders?: Folder[];
 }
 
 export function MacroForm({
@@ -15,10 +16,12 @@ export function MacroForm({
   onSubmit,
   onCancel,
   onSuccess,
+  folders = [],
 }: MacroFormProps) {
   const [nome, setNome] = useState("");
   const [atalho, setAtalho] = useState("");
   const [textoExpandido, setTextoExpandido] = useState("");
+  const [folderId, setFolderId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,6 +29,7 @@ export function MacroForm({
       setNome(macro.nome);
       setAtalho(macro.atalho);
       setTextoExpandido(macro.textoExpandido);
+      setFolderId(macro.folderId ?? "");
     }
   }, [macro]);
 
@@ -37,12 +41,14 @@ export function MacroForm({
       nome: nome.trim(),
       atalho: atalho.trim(),
       textoExpandido: textoExpandido.trim(),
+      folderId: folderId || undefined,
     });
 
     if (result.success) {
       setNome("");
       setAtalho("");
       setTextoExpandido("");
+      setFolderId("");
       setError(null);
       onSuccess?.();
     } else {
@@ -54,6 +60,7 @@ export function MacroForm({
     setNome("");
     setAtalho("");
     setTextoExpandido("");
+    setFolderId("");
     setError(null);
     onCancel();
   };
@@ -76,6 +83,25 @@ export function MacroForm({
             {error}
           </div>
         )}
+
+        <div className="macro-form-field">
+          <label htmlFor="folderId" className="macro-form-label">
+            Pasta
+          </label>
+          <select
+            id="folderId"
+            className="input"
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+          >
+            <option value="">Sem pasta</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="macro-form-field">
           <label htmlFor="nome" className="macro-form-label">
