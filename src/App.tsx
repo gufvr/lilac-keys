@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMacros } from "./hooks/useMacros";
 import { Macro } from "./types/macro";
 import { Header } from "./components/Header/Header";
@@ -20,10 +20,6 @@ function App() {
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>(
     undefined,
   );
-
-  useEffect(() => {
-    void chrome.runtime.sendMessage({ type: "inject-content-script" });
-  }, []);
 
   const handleFormSubmit = (data: Omit<Macro, "id">) => {
     if (editingMacro) {
