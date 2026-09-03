@@ -75,7 +75,7 @@
   background-color: var(--color-bg-tertiary);
   padding: 0.375rem 0.75rem;
   border-radius: 0.375rem;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.875rem;
   color: var(--color-primary);
   border: 1px solid var(--color-border);
@@ -89,6 +89,22 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+.macro-card-text blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--color-primary);
+  color: var(--color-text-secondary);
+}
+
+.macro-card-text a {
+  color: var(--color-primary);
+}
+
+.macro-card-text ul,
+.macro-card-text ol {
+  padding-left: 1.5rem;
 }
 
 @media (max-width: 768px) {
