@@ -12,6 +12,7 @@ export function exportMacros(
   macros: Macro[],
   format: "json" | "txt" = "json",
   folders: Folder[] = [],
+  folderId?: string,
 ): void {
   try {
     let dataStr: string;
@@ -31,11 +32,42 @@ export function exportMacros(
       mimeType = "text/plain";
       extension = "txt";
     } else {
-      const groups = folders.map(
+      const selectedFolderIds = folderId
+        ? new Set(
+            folders
+              .filter((folder) => folder.id === folderId)
+              .map((folder) => folder.id),
+          )
+        : undefined;
+      if (selectedFolderIds) {
+        let changed = true;
+        while (changed) {
+          changed = false;
+          folders.forEach((folder) => {
+            if (
+              folder.parentId &&
+              selectedFolderIds.has(folder.parentId) &&
+              !selectedFolderIds.has(folder.id)
+            ) {
+              selectedFolderIds.add(folder.id);
+              changed = true;
+            }
+          });
+        }
+      }
+      const exportFolders = selectedFolderIds
+        ? folders.filter((folder) => selectedFolderIds.has(folder.id))
+        : folders;
+      const exportMacros = selectedFolderIds
+        ? macros.filter(
+            (macro) => macro.folderId && selectedFolderIds.has(macro.folderId),
+          )
+        : macros;
+      const groups = exportFolders.map(
         (folder): ProKeysFolder => [
           folder.name,
           folder.createdAt,
-          ...macros
+          ...exportMacros
             .filter((macro) => macro.folderId === folder.id)
             .map((macro) => ({
               name: macro.atalho,
@@ -44,7 +76,9 @@ export function exportMacros(
             })),
         ],
       );
-      const unfiled = macros.filter((macro) => !macro.folderId);
+      const unfiled = selectedFolderIds
+        ? []
+        : macros.filter((macro) => !macro.folderId);
       if (unfiled.length > 0) {
         groups.push([
           "",
@@ -65,7 +99,7 @@ export function exportMacros(
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `lilac-keys-macros-${
+    link.download = `lilac-keys-${folderId ? "folder" : "macros"}-${
       new Date().toISOString().split("T")[0]
     }.${extension}`;
     document.body.appendChild(link);

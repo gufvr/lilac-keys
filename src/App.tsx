@@ -6,6 +6,7 @@ import { MacroForm } from "./components/MacroForm/MacroForm";
 import { MacroList } from "./components/MacroList/MacroList";
 import { ImportExport } from "./components/ImportExport/ImportExport";
 import { Help } from "./components/Help/Help";
+import { exportMacros } from "./utils/exportImport";
 import "./App.css";
 
 function App() {
@@ -20,6 +21,8 @@ function App() {
     createFolder,
     deleteSelected,
     moveSelected,
+    renameFolder,
+    deleteFolder,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>(
     undefined,
@@ -53,11 +56,15 @@ function App() {
     replaceMacros(importedMacros);
   };
 
-  const handleCreateFolder = () => {
+  const handleCreateFolder = (parentId?: string) => {
     const name = window.prompt("Nome da nova pasta:");
     if (name === null) return;
-    const result = createFolder(name);
+    const result = createFolder(name, parentId);
     if (!result.success) window.alert(result.error);
+  };
+
+  const handleExportFolder = (folderId: string) => {
+    exportMacros(macros, "json", folders, folderId);
   };
 
   if (loading) {
@@ -95,9 +102,25 @@ function App() {
             onCreateFolder={handleCreateFolder}
             onDeleteSelected={deleteSelected}
             onMoveSelected={moveSelected}
+            onRenameFolder={renameFolder}
+            onDeleteFolder={deleteFolder}
+            onExportFolder={handleExportFolder}
           />
         </div>
       </main>
+      <footer id="footer">
+        <p>
+          © 2026 Desenvolvido por{" "}
+          <a
+            href="https://github.com/gufvr"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Gustavo Favero
+          </a>{" "}
+          · Todos os direitos reservados
+        </p>
+      </footer>
     </div>
   );
 }

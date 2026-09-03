@@ -1,14 +1,66 @@
 .macro-card {
-  margin-bottom: 1rem;
+  margin-bottom: 0;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.macro-card:hover,
+.macro-card.is-expanded {
+  border-left-color: var(--color-primary);
+  background-color: var(--color-bg-tertiary);
+}
+
+.macro-card-checkbox {
+  position: relative;
+  display: inline-flex;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 1.15rem;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.macro-card-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.macro-card-checkbox-mark {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--color-border-hover);
+  border-radius: 0.3rem;
+  background: var(--color-bg-primary);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.macro-card-checkbox input:checked + .macro-card-checkbox-mark {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: inset 0 0 0 3px var(--color-bg-primary);
+}
+
+.macro-card-checkbox input:focus-visible + .macro-card-checkbox-mark {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .macro-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .macro-card-title {
@@ -47,9 +99,19 @@
 }
 
 .macro-card-content {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 1rem;
+}
+
+.macro-card.is-expanded .macro-card-header {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.macro-card.is-expanded .macro-card-content {
+  display: flex;
 }
 
 .macro-card-field {

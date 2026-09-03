@@ -126,20 +126,27 @@ export function useMacros() {
   );
 
   const createFolder = useCallback(
-    (name: string): { success: boolean; error?: string } => {
+    (name: string, parentId?: string): { success: boolean; error?: string } => {
       const trimmedName = name.trim();
       if (!trimmedName)
         return { success: false, error: "O nome da pasta é obrigatório" };
       if (
         folders.some(
-          (folder) => folder.name.toLowerCase() === trimmedName.toLowerCase(),
+          (folder) =>
+            folder.parentId === parentId &&
+            folder.name.toLowerCase() === trimmedName.toLowerCase(),
         )
       ) {
         return { success: false, error: "Esta pasta já existe" };
       }
       setFolders((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), name: trimmedName, createdAt: Date.now() },
+        {
+          id: crypto.randomUUID(),
+          name: trimmedName,
+          createdAt: Date.now(),
+          parentId,
+        },
       ]);
       return { success: true };
     },
@@ -149,6 +156,62 @@ export function useMacros() {
   const deleteSelected = useCallback((ids: string[]): void => {
     setMacros((prev) => prev.filter((macro) => !ids.includes(macro.id)));
   }, []);
+
+  const renameFolder = useCallback(
+    (id: string, name: string): { success: boolean; error?: string } => {
+      const trimmedName = name.trim();
+      const folder = folders.find((item) => item.id === id);
+      if (!trimmedName)
+        return { success: false, error: "O nome da pasta é obrigatório" };
+      if (!folder) return { success: false, error: "Pasta não encontrada" };
+      if (
+        folders.some(
+          (item) =>
+            item.id !== id &&
+            item.parentId === folder.parentId &&
+            item.name.toLowerCase() === trimmedName.toLowerCase(),
+        )
+      ) {
+        return { success: false, error: "Esta pasta já existe neste local" };
+      }
+      setFolders((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, name: trimmedName } : item,
+        ),
+      );
+      return { success: true };
+    },
+    [folders],
+  );
+
+  const deleteFolder = useCallback(
+    (id: string): void => {
+      const idsToDelete = new Set<string>([id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        folders.forEach((folder) => {
+          if (
+            folder.parentId &&
+            idsToDelete.has(folder.parentId) &&
+            !idsToDelete.has(folder.id)
+          ) {
+            idsToDelete.add(folder.id);
+            changed = true;
+          }
+        });
+      }
+      setFolders((prev) =>
+        prev.filter((folder) => !idsToDelete.has(folder.id)),
+      );
+      setMacros((prev) =>
+        prev.filter(
+          (macro) => !macro.folderId || !idsToDelete.has(macro.folderId),
+        ),
+      );
+    },
+    [folders],
+  );
 
   const moveSelected = useCallback((ids: string[], folderId?: string): void => {
     setMacros((prev) =>
@@ -170,5 +233,7 @@ export function useMacros() {
     createFolder,
     deleteSelected,
     moveSelected,
+    renameFolder,
+    deleteFolder,
   };
 }

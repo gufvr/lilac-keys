@@ -1,4 +1,5 @@
 import { Macro } from "../../types/macro";
+import { useState } from "react";
 import "./MacroCard.css";
 
 interface MacroCardProps {
@@ -16,6 +17,7 @@ export function MacroCard({
   selected = false,
   onSelect,
 }: MacroCardProps) {
+  const [expanded, setExpanded] = useState(false);
   const handleDelete = () => {
     if (
       window.confirm(`Tem certeza que deseja excluir a macro "${macro.nome}"?`)
@@ -25,18 +27,31 @@ export function MacroCard({
   };
 
   return (
-    <div className="macro-card card">
+    <div
+      className={`macro-card card${expanded ? " is-expanded" : ""}`}
+      onClick={() => setExpanded((value) => !value)}
+    >
       <div className="macro-card-header">
         {onSelect && (
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onSelect(macro.id)}
-            aria-label={`Selecionar ${macro.nome}`}
-          />
+          <label
+            className="macro-card-checkbox"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              onClick={(event) => event.stopPropagation()}
+              onChange={() => onSelect(macro.id)}
+              aria-label={`Selecionar ${macro.nome}`}
+            />
+            <span className="macro-card-checkbox-mark" aria-hidden="true" />
+          </label>
         )}
         <h3 className="macro-card-title">{macro.nome}</h3>
-        <div className="macro-card-actions">
+        <div
+          className="macro-card-actions"
+          onClick={(event) => event.stopPropagation()}
+        >
           <button
             className="btn-icon"
             onClick={() => onEdit(macro)}

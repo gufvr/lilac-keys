@@ -11,6 +11,7 @@ export interface Folder {
   id: string;
   name: string;
   createdAt: number;
+  parentId?: string;
 }
 
 export interface MacroValidation {
