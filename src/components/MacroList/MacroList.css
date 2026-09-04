@@ -103,8 +103,18 @@
   margin-bottom: 1rem;
 }
 
-.macro-list-toolbar .input:first-child {
-  flex: 1;
+.macro-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr) auto;
+  align-items: center;
+}
+
+.macro-list-toolbar .input {
+  min-width: 0;
+}
+
+.macro-list-toolbar select.input {
+  min-width: 250px;
 }
 
 .macro-list-bulk {
@@ -168,6 +178,18 @@
   .macro-list-toolbar .btn,
   .macro-list-bulk .btn {
     width: 100%;
+  }
+
+  .macro-list-toolbar .input:first-child {
+    min-width: 0;
+  }
+
+  .macro-list-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .macro-list-toolbar select.input {
+    min-width: 0;
   }
 
   .macro-list-grid {

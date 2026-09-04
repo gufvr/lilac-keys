@@ -120,6 +120,16 @@ function App() {
           </a>{" "}
           · Todos os direitos reservados
         </p>
+        <p>
+          Projeto no{" "}
+          <a
+            href="https://github.com/gufvr/lilac-keys"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>
+        </p>
       </footer>
     </div>
   );

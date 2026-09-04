@@ -123,9 +123,9 @@ export function Help() {
                 Nome da Macro / atalho Texto expandido
               </code>
               <p>
-                Arquivos do ProKeys com campos <code>name</code> e{" "}
-                <code>body</code> também são aceitos. O <code>name</code> vira o
-                nome e o atalho, e o <code>body</code> vira o texto expandido.
+                Arquivos JSON com campos <code>name</code> e <code>body</code>{" "}
+                também são aceitos. O <code>name</code> vira o nome e o atalho,
+                e o <code>body</code> vira o texto expandido.
               </p>
             </div>
           </div>

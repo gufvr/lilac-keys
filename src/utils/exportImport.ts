@@ -1,12 +1,12 @@
 import { Folder, Macro } from "../types/macro";
 
-type ProKeysSnippet = {
+type ExternalSnippet = {
   name: string;
   body: string;
   timestamp?: number;
 };
 
-type ProKeysFolder = [string, number, ...ProKeysSnippet[]];
+type ExternalFolder = [string, number, ...ExternalSnippet[]];
 
 export function exportMacros(
   macros: Macro[],
@@ -64,7 +64,7 @@ export function exportMacros(
           )
         : macros;
       const groups = exportFolders.map(
-        (folder): ProKeysFolder => [
+        (folder): ExternalFolder => [
           folder.name,
           folder.createdAt,
           ...exportMacros
@@ -122,10 +122,10 @@ export async function importMacros(file: File): Promise<Macro[]> {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith(".txt")) {
-          const proKeysMacros = parseProKeysText(content);
+          const externalMacros = parseExternalText(content);
 
-          if (proKeysMacros) {
-            resolve(proKeysMacros);
+          if (externalMacros) {
+            resolve(externalMacros);
             return;
           }
 
@@ -154,10 +154,10 @@ export async function importMacros(file: File): Promise<Macro[]> {
 
         const parsed = JSON.parse(content);
 
-        const proKeysMacros = parseProKeysData(parsed);
+        const externalMacros = parseExternalData(parsed);
 
-        if (proKeysMacros) {
-          resolve(proKeysMacros);
+        if (externalMacros) {
+          resolve(externalMacros);
           return;
         }
 
@@ -205,12 +205,12 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").trim();
 }
 
-function parseProKeysText(content: string): Macro[] | null {
+function parseExternalText(content: string): Macro[] | null {
   const trimmedContent = content.trim();
 
   try {
     const parsed = JSON.parse(trimmedContent);
-    return parseProKeysData(parsed);
+    return parseExternalData(parsed);
   } catch {
     const snippets = extractJsonObjects(trimmedContent);
 
@@ -218,7 +218,7 @@ function parseProKeysText(content: string): Macro[] | null {
       return null;
     }
 
-    return parseProKeysData(snippets);
+    return parseExternalData(snippets);
   }
 }
 
@@ -270,13 +270,13 @@ function extractJsonObjects(content: string): unknown[] {
   return objects;
 }
 
-function parseProKeysData(data: unknown): Macro[] | null {
+function parseExternalData(data: unknown): Macro[] | null {
   if (Array.isArray(data) && data.every((item) => Array.isArray(item))) {
     const folders = data as unknown[][];
     const nestedMacros = folders.flatMap((folder) => {
       const folderName = typeof folder[0] === "string" ? folder[0] : "";
       return folder.slice(2).flatMap((item) => {
-        if (!isProKeysSnippet(item)) return [];
+        if (!isExternalSnippet(item)) return [];
         return [
           {
             id: crypto.randomUUID(),
@@ -298,11 +298,11 @@ function parseProKeysData(data: unknown): Macro[] | null {
   if (!Array.isArray(snippets)) return null;
 
   const validSnippets = snippets.filter(
-    (item): item is ProKeysSnippet =>
+    (item): item is ExternalSnippet =>
       typeof item === "object" &&
       item !== null &&
-      typeof (item as ProKeysSnippet).name === "string" &&
-      typeof (item as ProKeysSnippet).body === "string",
+      typeof (item as ExternalSnippet).name === "string" &&
+      typeof (item as ExternalSnippet).body === "string",
   );
 
   if (validSnippets.length === 0) return null;
@@ -315,11 +315,11 @@ function parseProKeysData(data: unknown): Macro[] | null {
   }));
 }
 
-function isProKeysSnippet(item: unknown): item is ProKeysSnippet {
+function isExternalSnippet(item: unknown): item is ExternalSnippet {
   return (
     typeof item === "object" &&
     item !== null &&
-    typeof (item as ProKeysSnippet).name === "string" &&
-    typeof (item as ProKeysSnippet).body === "string"
+    typeof (item as ExternalSnippet).name === "string" &&
+    typeof (item as ExternalSnippet).body === "string"
   );
 }
