@@ -1,7 +1,5 @@
 import { Macro } from "../types/macro";
 
-const STORAGE_KEY = "lilac-keys-macros";
-
 document.addEventListener("keydown", (e) => {
   void handleKeydown(e).catch((error: unknown) => {
     if (isExtensionContextInvalidated(error)) return;
@@ -21,6 +19,8 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
     return;
   }
 
+  e.preventDefault();
+
   const plainTextElement = isPlainTextField ? el : null;
   const richTextElement = isRichTextField ? el : null;
 
@@ -30,39 +30,72 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
     : getEditableTextBeforeCursor(richTextElement!);
   try {
     const macros = await loadMacros();
-    expandMacro(macros, e, plainTextElement, start, valueBeforeCursor);
+    if (!macros) {
+      insertSpace(plainTextElement, richTextElement, start);
+      return;
+    }
+    expandMacro(
+      macros,
+      plainTextElement,
+      richTextElement,
+      start,
+      valueBeforeCursor,
+    );
   } catch (error) {
     console.error("LilacKeys: falha ao carregar macros", error);
   }
 }
 
-function loadMacros(): Promise<Macro[]> {
+function loadMacros(): Promise<Macro[] | null> {
   return new Promise((resolve) => {
-    try {
-      chrome.storage.local.get(STORAGE_KEY, (result) => {
-        const error = chrome.runtime.lastError;
-        if (error) {
-          if (!isExtensionContextInvalidated(error)) {
-            console.error("LilacKeys: falha ao carregar macros", error);
+    if (chrome.storage?.local) {
+      try {
+        chrome.storage.local.get("lilac-keys-macros", (result) => {
+          const error = chrome.runtime.lastError;
+          if (!error) {
+            resolve((result["lilac-keys-macros"] as Macro[] | undefined) ?? []);
+            return;
           }
-          resolve([]);
-          return;
-        }
-        resolve((result[STORAGE_KEY] as Macro[] | undefined) ?? []);
-      });
-    } catch (error) {
-      if (!isExtensionContextInvalidated(error)) {
-        console.error("LilacKeys: falha ao carregar macros", error);
+          requestMacrosFromBackground(resolve);
+        });
+        return;
+      } catch {
+        requestMacrosFromBackground(resolve);
+        return;
       }
-      resolve([]);
     }
+
+    requestMacrosFromBackground(resolve);
   });
+}
+
+function requestMacrosFromBackground(
+  resolve: (macros: Macro[] | null) => void,
+): void {
+  try {
+    chrome.runtime.sendMessage({ type: "getMacros" }, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        if (!isExtensionContextInvalidated(error)) {
+          console.error("LilacKeys: falha ao carregar macros", error);
+        }
+        resolve(null);
+        return;
+      }
+      resolve((response?.macros as Macro[] | undefined) ?? []);
+    });
+  } catch (error) {
+    if (!isExtensionContextInvalidated(error)) {
+      console.error("LilacKeys: falha ao carregar macros", error);
+    }
+    resolve(null);
+  }
 }
 
 function expandMacro(
   macros: Macro[],
-  e: KeyboardEvent,
   plainTextElement: HTMLInputElement | HTMLTextAreaElement | null,
+  richTextElement: HTMLElement | null,
   start: number,
   valueBeforeCursor: string,
 ): void {
@@ -71,9 +104,11 @@ function expandMacro(
     normalizedValueBeforeCursor.endsWith(item.atalho.toLowerCase()),
   );
 
-  if (!macro) return;
+  if (!macro) {
+    insertSpace(plainTextElement, richTextElement, start);
+    return;
+  }
 
-  e.preventDefault();
   if (plainTextElement) {
     const expandedText = htmlToText(macro.textoExpandido);
     plainTextElement.value =
@@ -88,6 +123,25 @@ function expandMacro(
   selectCharactersBeforeCursor(macro.atalho.length);
   document.execCommand("delete", false);
   document.execCommand("insertHTML", false, macro.textoExpandido);
+}
+
+function insertSpace(
+  plainTextElement: HTMLInputElement | HTMLTextAreaElement | null,
+  richTextElement: HTMLElement | null,
+  start: number,
+): void {
+  if (plainTextElement) {
+    plainTextElement.value =
+      plainTextElement.value.slice(0, start) +
+      " " +
+      plainTextElement.value.slice(start);
+    plainTextElement.selectionStart = plainTextElement.selectionEnd = start + 1;
+    return;
+  }
+
+  if (richTextElement) {
+    document.execCommand("insertText", false, " ");
+  }
 }
 
 function isExtensionContextInvalidated(error: unknown): boolean {
