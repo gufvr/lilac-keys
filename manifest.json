@@ -2,10 +2,23 @@
   "manifest_version": 3,
   "name": "LilacKeys",
   "version": "1.0.0",
-  "description": "Gerenciador de macros de texto",
-  "permissions": ["storage"],
+  "description": "A browser extension for organizing and expanding text snippets.",
+  "icons": {
+    "16": "LilacKeys_logo_16.png",
+    "32": "LilacKeys_logo_32.png",
+    "48": "LilacKeys_logo_48.png",
+    "128": "LilacKeys_logo_128.png"
+  },
+  "permissions": ["storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],
-  "action": {},
+  "action": {
+    "default_icon": {
+      "16": "LilacKeys_logo_16.png",
+      "32": "LilacKeys_logo_32.png",
+      "48": "LilacKeys_logo_48.png",
+      "128": "LilacKeys_logo_128.png"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
