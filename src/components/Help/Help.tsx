@@ -48,6 +48,11 @@ export function Help() {
               </ul>
               <li>Clique em "Criar Macro" para salvar</li>
             </ol>
+            <p className="help-note">
+              Use marcadores como <code>%NOME%</code> no texto expandido. O
+              primeiro marcador será selecionado automaticamente e você poderá
+              avançar pelos próximos com <kbd>Tab</kbd>.
+            </p>
           </div>
 
           <div className="help-section">
