@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/lilacKeys_logo.jpg" alt="LilacKeys logo" width="120" />
+  <img src="public/LilacKeys_logo.png" alt="LilacKeys logo" width="120" />
 </p>
 
 <h1 align="center">LilacKeys</h1>
