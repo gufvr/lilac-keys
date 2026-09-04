@@ -24,6 +24,7 @@ It is a Manifest V3 browser extension with a React management interface and a li
 - Organize snippets into folders and nested subfolders.
 - Create, rename, export, and delete folders from the folder browser.
 - Search by macro name, shortcut, or expanded text.
+- Use `%PLACEHOLDER%` markers for editable fields and navigate between them with `Tab`.
 - Select snippets individually or select all filtered results.
 - Move or delete multiple snippets at once.
 - Import and export JSON and TXT files.
