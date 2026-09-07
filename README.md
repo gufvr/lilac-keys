@@ -6,11 +6,6 @@
 
 <p align="center">A browser extension for creating, organizing, searching, and expanding text snippets.</p>
 
-<p align="center">
-  <a href="https://github.com/gufvr/lilac-keys">Repository</a> ·
-  <a href="https://github.com/gufvr/lilac-keys/issues">Issues</a>
-</p>
-
 ## Overview
 
 LilacKeys keeps frequently used text close at hand. Create a shortcut once, organize snippets into nested folders, and expand saved content in supported text fields with `Shift + Space`.
@@ -119,4 +114,4 @@ LilacKeys stores data locally in the browser extension profile. `unlimitedStorag
 
 ## License
 
-No license has been specified for this repository yet.
+This project is under the MIT license.
