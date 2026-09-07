@@ -237,6 +237,74 @@
   color: var(--color-error);
 }
 
+.macro-folder-move-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.macro-folder-move-dialog {
+  width: min(28rem, 100%);
+  max-height: min(32rem, calc(100vh - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-xl);
+  overflow-y: auto;
+}
+
+.macro-folder-move-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.macro-folder-move-header h3 {
+  color: var(--color-text-primary);
+  font-size: 1rem;
+}
+
+.macro-folder-move-description {
+  margin: 0.5rem 0 0.85rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.macro-folder-destination-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.macro-folder-destination {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  text-align: left;
+}
+
+.macro-folder-destination:hover,
+.macro-folder-destination:focus-visible {
+  border-color: var(--color-border-hover);
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+}
+
 .macro-list-toolbar,
 .macro-list-bulk {
   display: flex;

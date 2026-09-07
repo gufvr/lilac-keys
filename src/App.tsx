@@ -22,12 +22,13 @@ function App() {
     deleteSelected,
     moveSelected,
     renameFolder,
+    moveFolder,
     deleteFolder,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>();
 
   const handleFormSubmit = (data: Omit<Macro, "id">) => {
-    if (editingMacro) {
+    if (editingMacro?.id) {
       return updateMacro(editingMacro.id, data);
     } else {
       return createMacro(data);
@@ -69,8 +70,8 @@ function App() {
     if (!result.success) window.alert(result.error);
   };
 
-  const handleExportFolder = (folderId: string) => {
-    exportMacros(macros, "json", folders, folderId);
+  const handleExportFolder = (folderId: string, format: "json" | "txt") => {
+    exportMacros(macros, format, folders, folderId);
   };
 
   if (loading) {
@@ -98,6 +99,7 @@ function App() {
             onDeleteSelected={deleteSelected}
             onMoveSelected={moveSelected}
             onRenameFolder={renameFolder}
+            onMoveFolder={moveFolder}
             onDeleteFolder={deleteFolder}
             onExportFolder={handleExportFolder}
           />

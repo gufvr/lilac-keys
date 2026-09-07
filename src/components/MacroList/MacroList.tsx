@@ -16,8 +16,12 @@ interface MacroListProps {
     id: string,
     name: string,
   ) => { success: boolean; error?: string };
+  onMoveFolder: (
+    id: string,
+    parentId?: string,
+  ) => { success: boolean; error?: string };
   onDeleteFolder: (id: string) => void;
-  onExportFolder: (id: string) => void;
+  onExportFolder: (id: string, format: "json" | "txt") => void;
 }
 
 export function MacroList({
@@ -30,6 +34,7 @@ export function MacroList({
   onDeleteSelected,
   onMoveSelected,
   onRenameFolder,
+  onMoveFolder,
   onDeleteFolder,
   onExportFolder,
 }: MacroListProps) {
@@ -38,6 +43,7 @@ export function MacroList({
   const [selected, setSelected] = useState<string[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
   const [openFolderMenuId, setOpenFolderMenuId] = useState<string | undefined>();
+  const [folderToMove, setFolderToMove] = useState<Folder | undefined>();
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +116,19 @@ export function MacroList({
         setCurrentFolderId(folder.parentId);
       }
     }
+  };
+  const moveFolder = (folder: Folder, parentId?: string) => {
+    const result = onMoveFolder(folder.id, parentId);
+    if (!result.success) window.alert(result.error);
+    if (result.success) setFolderToMove(undefined);
+  };
+  const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
+    let folder = folders.find((item) => item.id === folderId);
+    while (folder?.parentId) {
+      if (folder.parentId === ancestorId) return true;
+      folder = folders.find((item) => item.id === folder?.parentId);
+    }
+    return false;
   };
   if (macros.length === 0 && folders.length === 0) {
     return (
@@ -207,12 +226,39 @@ export function MacroList({
                   role="menuitem"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onExportFolder(folder.id);
+                    onExportFolder(folder.id, "json");
                     setOpenFolderMenuId(undefined);
                   }}
                 >
                   <span className="material-symbols-outlined">download</span>
-                  Exportar pasta
+                    Exportar pasta em JSON
+                  </button>
+                  <button
+                    type="button"
+                    className="macro-folder-menu-action"
+                    title="Exportar pasta em TXT"
+                    role="menuitem"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onExportFolder(folder.id, "txt");
+                      setOpenFolderMenuId(undefined);
+                    }}
+                  >
+                    <span className="material-symbols-outlined">description</span>
+                    Exportar pasta em TXT
+                </button>
+                <button
+                  type="button"
+                  className="macro-folder-menu-action"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setFolderToMove(folder);
+                    setOpenFolderMenuId(undefined);
+                  }}
+                >
+                  <span className="material-symbols-outlined">drive_file_move</span>
+                  Mover pasta
                 </button>
                 <button
                   type="button"
@@ -372,6 +418,61 @@ export function MacroList({
       {filteredMacros.length === 0 && (
         <div className="macro-list-empty">
           <p>Nenhuma macro encontrada.</p>
+        </div>
+      )}
+      {folderToMove && (
+        <div
+          className="macro-folder-move-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="macro-folder-move-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setFolderToMove(undefined);
+          }}
+        >
+          <div className="macro-folder-move-dialog">
+            <div className="macro-folder-move-header">
+              <h3 id="macro-folder-move-title">Mover pasta</h3>
+              <button
+                type="button"
+                className="btn-icon"
+                aria-label="Fechar seleção de destino"
+                onClick={() => setFolderToMove(undefined)}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <p className="macro-folder-move-description">
+              Selecione onde deseja colocar “{folderToMove.name}”.
+            </p>
+            <div className="macro-folder-destination-list">
+              <button
+                type="button"
+                className="macro-folder-destination"
+                onClick={() => moveFolder(folderToMove)}
+              >
+                <span className="material-symbols-outlined">home</span>
+                Raiz
+              </button>
+              {folders
+                .filter(
+                  (folder) =>
+                    folder.id !== folderToMove.id &&
+                    !isDescendantOf(folder.id, folderToMove.id),
+                )
+                .map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    className="macro-folder-destination"
+                    onClick={() => moveFolder(folderToMove, folder.id)}
+                  >
+                    <span className="material-symbols-outlined">folder</span>
+                    {folder.name}
+                  </button>
+                ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -18,43 +18,36 @@ export function exportMacros(
     let dataStr: string;
     let mimeType: string;
     let extension: string;
+    const selectedFolderIds = folderId
+      ? new Set(
+          folders
+            .filter((folder) => folder.id === folderId)
+            .map((folder) => folder.id),
+        )
+      : undefined;
+
+    if (selectedFolderIds) {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        folders.forEach((folder) => {
+          if (
+            folder.parentId &&
+            selectedFolderIds.has(folder.parentId) &&
+            !selectedFolderIds.has(folder.id)
+          ) {
+            selectedFolderIds.add(folder.id);
+            changed = true;
+          }
+        });
+      }
+    }
 
     if (format === "txt") {
-      dataStr = macros
-        .map(
-          (macro) =>
-            `${macro.nome}\t${macro.atalho}\t${macro.textoExpandido.replace(
-              /\n/g,
-              "\\n",
-            )}`,
-        )
-        .join("\n");
+      dataStr = buildTreeText(macros, folders, selectedFolderIds);
       mimeType = "text/plain";
       extension = "txt";
     } else {
-      const selectedFolderIds = folderId
-        ? new Set(
-            folders
-              .filter((folder) => folder.id === folderId)
-              .map((folder) => folder.id),
-          )
-        : undefined;
-      if (selectedFolderIds) {
-        let changed = true;
-        while (changed) {
-          changed = false;
-          folders.forEach((folder) => {
-            if (
-              folder.parentId &&
-              selectedFolderIds.has(folder.parentId) &&
-              !selectedFolderIds.has(folder.id)
-            ) {
-              selectedFolderIds.add(folder.id);
-              changed = true;
-            }
-          });
-        }
-      }
       const exportFolders = selectedFolderIds
         ? folders.filter((folder) => selectedFolderIds.has(folder.id))
         : folders;
@@ -205,8 +198,52 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").trim();
 }
 
+function buildTreeText(
+  macros: Macro[],
+  folders: Folder[],
+  selectedFolderIds?: Set<string>,
+): string {
+  const lines: string[] = [];
+  const childrenByParent = new Map<string | undefined, Folder[]>();
+
+  folders.forEach((folder) => {
+    if (!selectedFolderIds || selectedFolderIds.has(folder.id)) {
+      const children = childrenByParent.get(folder.parentId) ?? [];
+      children.push(folder);
+      childrenByParent.set(folder.parentId, children);
+    }
+  });
+
+  const appendMacros = (folderId: string | undefined, indent: string) => {
+    macros
+      .filter((macro) => macro.folderId === folderId)
+      .forEach((macro) => {
+        lines.push(`${indent}{${macro.atalho}}`);
+        lines.push(stripHtml(macro.textoExpandido).replace(/\r/g, ""));
+      });
+  };
+
+  const appendFolder = (folder: Folder, indent: string) => {
+    lines.push(`${indent}[${folder.name}]`);
+    appendMacros(folder.id, `${indent}  `);
+    (childrenByParent.get(folder.id) ?? []).forEach((child) =>
+      appendFolder(child, `${indent}  `),
+    );
+  };
+
+  appendMacros(undefined, "");
+  (childrenByParent.get(undefined) ?? []).forEach((folder) =>
+    appendFolder(folder, ""),
+  );
+
+  return lines.join("\n");
+}
+
 function parseExternalText(content: string): Macro[] | null {
   const trimmedContent = content.trim();
+
+  const treeMacros = parseTreeText(trimmedContent);
+  if (treeMacros) return treeMacros;
 
   try {
     const parsed = JSON.parse(trimmedContent);
@@ -220,6 +257,66 @@ function parseExternalText(content: string): Macro[] | null {
 
     return parseExternalData(snippets);
   }
+}
+
+function parseTreeText(content: string): Macro[] | null {
+  const lines = content.split(/\r?\n/);
+  const macros: Macro[] = [];
+  const folderStack: { indent: number; name: string }[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const rawLine = lines[index];
+    const trimmedLine = rawLine.trim();
+    const indent = rawLine.search(/\S|$/);
+
+    if (!trimmedLine) {
+      index += 1;
+      continue;
+    }
+
+    const folderMatch = trimmedLine.match(/^\[([^\]]+)\]$/);
+    if (folderMatch) {
+      while (
+        folderStack.length > 0 &&
+        folderStack[folderStack.length - 1].indent >= indent
+      ) {
+        folderStack.pop();
+      }
+      folderStack.push({ indent, name: folderMatch[1].trim() });
+      index += 1;
+      continue;
+    }
+
+    const shortcutMatch = trimmedLine.match(/^\{([^{}]+)\}$/);
+    if (!shortcutMatch) {
+      index += 1;
+      continue;
+    }
+
+    const bodyLines: string[] = [];
+    index += 1;
+    while (index < lines.length) {
+      const nextTrimmed = lines[index].trim();
+      if (/^\[[^\]]+\]$/.test(nextTrimmed) || /^\{[^{}]+\}$/.test(nextTrimmed)) {
+        break;
+      }
+      bodyLines.push(lines[index].trim());
+      index += 1;
+    }
+
+    macros.push({
+      id: crypto.randomUUID(),
+      nome: shortcutMatch[1].trim(),
+      atalho: shortcutMatch[1].trim(),
+      textoExpandido: bodyLines.join("\n").trim(),
+      ...(folderStack.length > 0
+        ? { folderName: folderStack[folderStack.length - 1].name }
+        : {}),
+    });
+  }
+
+  return macros.length > 0 ? macros : null;
 }
 
 function extractJsonObjects(content: string): unknown[] {
@@ -271,25 +368,6 @@ function extractJsonObjects(content: string): unknown[] {
 }
 
 function parseExternalData(data: unknown): Macro[] | null {
-  if (Array.isArray(data) && data.every((item) => Array.isArray(item))) {
-    const folders = data as unknown[][];
-    const nestedMacros = folders.flatMap((folder) => {
-      const folderName = typeof folder[0] === "string" ? folder[0] : "";
-      return folder.slice(2).flatMap((item) => {
-        if (!isExternalSnippet(item)) return [];
-        return [
-          {
-            id: crypto.randomUUID(),
-            nome: item.name.trim(),
-            atalho: item.name.trim(),
-            textoExpandido: stripHtml(item.body),
-            ...(folderName ? { folderName } : {}),
-          },
-        ];
-      });
-    });
-    return nestedMacros.length > 0 ? nestedMacros : null;
-  }
   const snippets =
     typeof data === "object" && data !== null && "snippets" in data
       ? (data as { snippets?: unknown }).snippets
@@ -297,22 +375,34 @@ function parseExternalData(data: unknown): Macro[] | null {
 
   if (!Array.isArray(snippets)) return null;
 
-  const validSnippets = snippets.filter(
-    (item): item is ExternalSnippet =>
-      typeof item === "object" &&
-      item !== null &&
-      typeof (item as ExternalSnippet).name === "string" &&
-      typeof (item as ExternalSnippet).body === "string",
-  );
+  const macros: Macro[] = [];
+  const visit = (items: unknown[], folderPath: string[]) => {
+    items.forEach((item) => {
+      if (isExternalSnippet(item)) {
+        const folderName = folderPath.join(" / ");
+        macros.push({
+          id: crypto.randomUUID(),
+          nome: item.name.trim(),
+          atalho: item.name.trim(),
+          textoExpandido: stripHtml(item.body),
+          ...(folderName ? { folderName } : {}),
+        });
+        return;
+      }
 
-  if (validSnippets.length === 0) return null;
+      if (!Array.isArray(item) || typeof item[0] !== "string") return;
 
-  return validSnippets.map((snippet) => ({
-    id: crypto.randomUUID(),
-    nome: snippet.name.trim(),
-    atalho: snippet.name.trim(),
-    textoExpandido: stripHtml(snippet.body),
-  }));
+      const folderName = item[0].trim();
+      const nextPath =
+        folderName.toLowerCase() === "snippets"
+          ? folderPath
+          : [...folderPath, folderName];
+      visit(item.slice(2), nextPath);
+    });
+  };
+
+  visit(snippets, []);
+  return macros.length > 0 ? macros : null;
 }
 
 function isExternalSnippet(item: unknown): item is ExternalSnippet {

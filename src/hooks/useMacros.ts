@@ -184,6 +184,55 @@ export function useMacros() {
     [folders],
   );
 
+  const moveFolder = useCallback(
+    (id: string, parentId?: string): { success: boolean; error?: string } => {
+      const folder = folders.find((item) => item.id === id);
+      if (!folder) return { success: false, error: "Pasta não encontrada" };
+      if (parentId === id) {
+        return { success: false, error: "Uma pasta não pode ser movida para si mesma" };
+      }
+
+      const descendantIds = new Set<string>();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        folders.forEach((item) => {
+          if (
+            item.parentId &&
+            (item.parentId === id || descendantIds.has(item.parentId)) &&
+            !descendantIds.has(item.id)
+          ) {
+            descendantIds.add(item.id);
+            changed = true;
+          }
+        });
+      }
+
+      if (parentId && descendantIds.has(parentId)) {
+        return {
+          success: false,
+          error: "Uma pasta não pode ser movida para dentro de uma subpasta",
+        };
+      }
+      if (
+        folders.some(
+          (item) =>
+            item.id !== id &&
+            item.parentId === parentId &&
+            item.name.toLowerCase() === folder.name.toLowerCase(),
+        )
+      ) {
+        return { success: false, error: "Já existe uma pasta com esse nome no destino" };
+      }
+
+      setFolders((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, parentId } : item)),
+      );
+      return { success: true };
+    },
+    [folders],
+  );
+
   const deleteFolder = useCallback(
     (id: string): void => {
       const idsToDelete = new Set<string>([id]);
@@ -234,6 +283,7 @@ export function useMacros() {
     deleteSelected,
     moveSelected,
     renameFolder,
+    moveFolder,
     deleteFolder,
   };
 }
