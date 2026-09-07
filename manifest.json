@@ -9,7 +9,7 @@
     "48": "LilacKeys_logo_48.png",
     "128": "LilacKeys_logo_128.png"
   },
-  "permissions": ["storage", "unlimitedStorage"],
+  "permissions": ["storage", "unlimitedStorage", "contextMenus"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "action": {
     "default_icon": {
