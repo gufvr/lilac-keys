@@ -66,10 +66,19 @@ export function MacroForm({
   };
 
   return (
-    <div className="macro-form-container">
-      <form className="macro-form card" onSubmit={handleSubmit}>
+    <div
+      className="macro-form-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="macro-form-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) handleCancel();
+      }}
+    >
+      <div className="macro-form-container">
+        <form className="macro-form card" onSubmit={handleSubmit}>
         <div className="macro-form-header">
-          <h2 className="macro-form-title">
+          <h2 id="macro-form-title" className="macro-form-title">
             <span className="material-symbols-outlined">
               {macro ? "edit" : "add"}
             </span>
@@ -161,7 +170,8 @@ export function MacroForm({
             {macro ? "Salvar Alterações" : "Criar Macro"}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }

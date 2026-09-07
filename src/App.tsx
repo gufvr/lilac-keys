@@ -24,9 +24,7 @@ function App() {
     renameFolder,
     deleteFolder,
   } = useMacros();
-  const [editingMacro, setEditingMacro] = useState<Macro | undefined>(
-    undefined,
-  );
+  const [editingMacro, setEditingMacro] = useState<Macro | undefined>();
 
   const handleFormSubmit = (data: Omit<Macro, "id">) => {
     if (editingMacro) {
@@ -42,7 +40,15 @@ function App() {
 
   const handleEdit = (macro: Macro) => {
     setEditingMacro(macro);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleCreateMacro = () => {
+    setEditingMacro({
+      id: "",
+      nome: "",
+      atalho: "",
+      textoExpandido: "",
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -82,21 +88,10 @@ function App() {
       <main className="app-main">
         <div className="container">
           <Help />
-          <ImportExport
-            macros={macros}
-            folders={folders}
-            onImport={handleImport}
-          />
-          <MacroForm
-            macro={editingMacro}
-            onSubmit={handleFormSubmit}
-            onCancel={handleFormCancel}
-            onSuccess={handleFormCancel}
-            folders={folders}
-          />
           <MacroList
             macros={macros}
             folders={folders}
+            onCreateMacro={handleCreateMacro}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onCreateFolder={handleCreateFolder}
@@ -106,6 +101,20 @@ function App() {
             onDeleteFolder={deleteFolder}
             onExportFolder={handleExportFolder}
           />
+          <ImportExport
+            macros={macros}
+            folders={folders}
+            onImport={handleImport}
+          />
+          {editingMacro !== undefined && (
+            <MacroForm
+              macro={editingMacro.id ? editingMacro : undefined}
+              onSubmit={handleFormSubmit}
+              onCancel={handleFormCancel}
+              onSuccess={handleFormCancel}
+              folders={folders}
+            />
+          )}
         </div>
       </main>
       <footer id="footer">

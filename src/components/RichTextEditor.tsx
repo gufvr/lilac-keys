@@ -77,6 +77,20 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     onChange(editorRef.current?.innerHTML ?? "");
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab" || !editorRef.current) return;
+
+    const selection = window.getSelection();
+    const anchorNode = selection?.anchorNode;
+    const listItem = anchorNode?.parentElement?.closest("li");
+
+    if (!listItem || !editorRef.current.contains(listItem)) return;
+
+    event.preventDefault();
+    document.execCommand(event.shiftKey ? "outdent" : "indent", false);
+    onChange(editorRef.current.innerHTML);
+  };
+
   return (
     <div className="rich-text-editor">
       <div
@@ -115,6 +129,7 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
         contentEditable
         role="textbox"
         aria-multiline="true"
+        onKeyDown={handleKeyDown}
         onInput={(event) => onChange(event.currentTarget.innerHTML)}
         data-placeholder="Digite o texto que será inserido quando o atalho for usado..."
       />

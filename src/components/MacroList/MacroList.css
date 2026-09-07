@@ -12,6 +12,10 @@
 }
 
 .macro-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
@@ -22,7 +26,7 @@
   margin-bottom: 0.75rem;
   color: var(--color-text-secondary);
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .macro-list-breadcrumb-item {
@@ -36,6 +40,38 @@
 
 .macro-list-breadcrumb-item-collapsed {
   flex: 0 0 auto;
+}
+
+.macro-folder-preview {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 50%;
+  z-index: 2;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 0.25rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-list-breadcrumb-item-collapsed:hover .macro-folder-preview,
+.macro-list-breadcrumb-item-collapsed:focus-within .macro-folder-preview,
+.macro-folder-preview:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
 }
 
 .macro-list-breadcrumb-item-collapsed .macro-list-breadcrumb {
@@ -56,16 +92,6 @@
 
 .macro-list-breadcrumb-item-collapsed .macro-list-breadcrumb-label {
   display: none;
-}
-
-.macro-list-breadcrumb-item-collapsed:hover .macro-list-breadcrumb {
-  width: min(12rem, 25vw);
-  color: var(--color-primary);
-  justify-content: flex-start;
-}
-
-.macro-list-breadcrumb-item-collapsed:hover .macro-list-breadcrumb-label {
-  display: inline;
 }
 
 .macro-list-breadcrumb {
@@ -145,7 +171,6 @@
   transform: translateY(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
 }
 
 .macro-list-breadcrumb-item:hover .macro-folder-actions,
@@ -197,6 +222,13 @@
   gap: 0.5rem;
 }
 
+.macro-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .macro-list-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -226,6 +258,17 @@
 }
 
 @media (max-width: 768px) {
+  .macro-list-header,
+  .macro-list-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .macro-list-heading .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .macro-list-toolbar,
   .macro-list-bulk {
     align-items: stretch;

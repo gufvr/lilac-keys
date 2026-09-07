@@ -1,10 +1,24 @@
+.macro-form-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.68);
+  overflow-y: auto;
+}
+
 .macro-form-container {
-  margin-bottom: 2rem;
+  width: 100%;
 }
 
 .macro-form {
   max-width: 800px;
   margin: 0 auto;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 .macro-form-header {

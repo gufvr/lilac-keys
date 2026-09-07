@@ -6,6 +6,7 @@ import "./MacroList.css";
 interface MacroListProps {
   macros: Macro[];
   folders: Folder[];
+  onCreateMacro: () => void;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
   onCreateFolder: (parentId?: string) => void;
@@ -22,6 +23,7 @@ interface MacroListProps {
 export function MacroList({
   macros,
   folders,
+  onCreateMacro,
   onEdit,
   onDelete,
   onCreateFolder,
@@ -153,6 +155,16 @@ export function MacroList({
                   {folder.name}
                 </span>
               </button>
+              {!isFirstFolder && !isCurrentFolder && (
+                <button
+                  type="button"
+                  className="macro-folder-preview"
+                  onClick={() => setCurrentFolderId(folder.id)}
+                  aria-label={`Navegar para ${folder.name}`}
+                >
+                  {folder.name}
+                </button>
+              )}
               <span className="macro-folder-actions">
                 <button
                   className="btn-icon"
@@ -192,10 +204,16 @@ export function MacroList({
             );
           })}
         </div>
-        <h2 className="macro-list-title">
-          <span className="material-symbols-outlined">list</span>
-          Macros ({macros.length})
-        </h2>
+        <div className="macro-list-heading">
+          <h2 className="macro-list-title">
+            <span className="material-symbols-outlined">list</span>
+            Macros ({macros.length})
+          </h2>
+          <button className="btn btn-primary" onClick={onCreateMacro}>
+            <span className="material-symbols-outlined">add</span>
+            Nova Macro
+          </button>
+        </div>
       </div>
       <div className="macro-list-toolbar">
         <input
