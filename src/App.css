@@ -10,14 +10,23 @@
 }
 
 #footer {
-  padding: 1.5rem 1rem 2rem;
+  margin-top: auto;
+  padding: 1.25rem 0;
   color: var(--color-text-tertiary);
-  text-align: center;
   font-size: 0.875rem;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
 }
 
-#footer p + p {
-  margin-top: 0.5rem;
+.footer-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.footer-copyright {
+  margin: 0;
 }
 
 #footer a {
@@ -28,6 +37,17 @@
 
 #footer a:hover {
   text-decoration: underline;
+}
+
+.footer-project-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.footer-project-link .material-symbols-outlined {
+  font-size: 1.05rem;
 }
 
 .app-loading {
@@ -57,5 +77,16 @@
 @media (max-width: 768px) {
   .app-main {
     padding: 1rem 0;
+  }
+
+  #footer {
+    padding: 1rem 0;
+  }
+
+  .footer-content {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+    text-align: center;
   }
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import manifest from "../manifest.json";
 import { useMacros } from "./hooks/useMacros";
 import { Macro } from "./types/macro";
 import { Header } from "./components/Header/Header";
@@ -120,27 +121,27 @@ function App() {
         </div>
       </main>
       <footer id="footer">
-        <p>
-          © 2026 Desenvolvido por{" "}
+        <div className="container footer-content">
+          <p className="footer-copyright">
+            © 2026 LilacKeys · v{manifest.version} · Desenvolvido por{" "}
+            <a
+              href="https://github.com/gufvr"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Gustavo Favero
+            </a>
+          </p>
           <a
-            href="https://github.com/gufvr"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Gustavo Favero
-          </a>{" "}
-          · Todos os direitos reservados
-        </p>
-        <p>
-          Projeto no{" "}
-          <a
+            className="footer-project-link"
             href="https://github.com/gufvr/lilac-keys"
             target="_blank"
             rel="noopener noreferrer"
           >
-            GitHub
+            <span className="material-symbols-outlined">code</span>
+            Projeto no GitHub
           </a>
-        </p>
+        </div>
       </footer>
     </div>
   );
