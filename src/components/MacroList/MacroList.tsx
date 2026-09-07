@@ -47,6 +47,12 @@ export function MacroList({
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (currentFolderId && !folders.some((folder) => folder.id === currentFolderId)) {
+      setCurrentFolderId(undefined);
+    }
+  }, [currentFolderId, folders]);
+
+  useEffect(() => {
     if (!openFolderMenuId) return;
 
     const handleOutsideClick = (event: MouseEvent) => {
@@ -79,7 +85,8 @@ export function MacroList({
         return (
           (query.trim() || folderFilter !== "all"
             ? folderFilter === "all" || (macro.folderId ?? "") === folderFilter
-            : (macro.folderId ?? undefined) === currentFolderId) &&
+            : currentFolderId === undefined ||
+              (macro.folderId ?? undefined) === currentFolderId) &&
           haystack.includes(query.toLowerCase())
         );
       }),

@@ -78,6 +78,12 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key.toLowerCase() === "k" && event.ctrlKey) {
+      event.preventDefault();
+      insertLink();
+      return;
+    }
+
     if (event.key !== "Tab" || !editorRef.current) return;
 
     const selection = window.getSelection();
