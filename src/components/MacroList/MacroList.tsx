@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import "./MacroList.css";
@@ -37,6 +37,21 @@ export function MacroList({
   const [folderFilter, setFolderFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
+  const [openFolderMenuId, setOpenFolderMenuId] = useState<string | undefined>();
+  const breadcrumbsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openFolderMenuId) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!breadcrumbsRef.current?.contains(event.target as Node)) {
+        setOpenFolderMenuId(undefined);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [openFolderMenuId]);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const childFolders = folders.filter(
     (folder) => folder.parentId === currentFolderId,
@@ -111,7 +126,7 @@ export function MacroList({
   return (
     <div className="macro-list">
       <div className="macro-list-header">
-        <div className="macro-list-breadcrumbs">
+        <div ref={breadcrumbsRef} className="macro-list-breadcrumbs">
           <button
             className="btn-icon"
             onClick={() => setCurrentFolderId(undefined)}
@@ -141,6 +156,7 @@ export function MacroList({
             >
               <span className="material-symbols-outlined">chevron_right</span>
               <button
+                type="button"
                 className="macro-list-breadcrumb"
                 onClick={() => setCurrentFolderId(folder.id)}
                 aria-current={isCurrentFolder ? "page" : undefined}
@@ -165,41 +181,69 @@ export function MacroList({
                   {folder.name}
                 </button>
               )}
-              <span className="macro-folder-actions">
+              <button
+                type="button"
+                className="macro-folder-menu-trigger"
+                aria-label={`Opções da pasta ${folder.name}`}
+                aria-expanded={openFolderMenuId === folder.id}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setOpenFolderMenuId((id) =>
+                    id === folder.id ? undefined : folder.id,
+                  );
+                }}
+              >
+                <span className="material-symbols-outlined">more_vert</span>
+              </button>
+              {openFolderMenuId === folder.id && (
+                <div className="macro-folder-actions" role="menu">
+                  <strong className="macro-folder-menu-title">
+                    {folder.name}
+                  </strong>
                 <button
-                  className="btn-icon"
+                  type="button"
+                  className="macro-folder-menu-action"
                   title="Exportar pasta"
-                  aria-label={`Exportar pasta ${folder.name}`}
+                  role="menuitem"
                   onClick={(event) => {
                     event.stopPropagation();
                     onExportFolder(folder.id);
+                    setOpenFolderMenuId(undefined);
                   }}
                 >
                   <span className="material-symbols-outlined">download</span>
+                  Exportar pasta
                 </button>
                 <button
-                  className="btn-icon"
+                  type="button"
+                  className="macro-folder-menu-action"
                   title="Renomear pasta"
-                  aria-label={`Renomear pasta ${folder.name}`}
+                  role="menuitem"
                   onClick={(event) => {
                     event.stopPropagation();
                     renameFolder(folder);
+                    setOpenFolderMenuId(undefined);
                   }}
                 >
                   <span className="material-symbols-outlined">edit</span>
+                  Renomear pasta
                 </button>
                 <button
-                  className="btn-icon btn-icon-danger"
+                  type="button"
+                  className="macro-folder-menu-action macro-folder-menu-action-danger"
                   title="Excluir pasta"
-                  aria-label={`Excluir pasta ${folder.name}`}
+                  role="menuitem"
                   onClick={(event) => {
                     event.stopPropagation();
                     deleteFolder(folder);
+                    setOpenFolderMenuId(undefined);
                   }}
                 >
                   <span className="material-symbols-outlined">delete</span>
+                  Excluir pasta
                 </button>
-              </span>
+                </div>
+              )}
             </span>
             );
           })}

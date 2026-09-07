@@ -107,6 +107,14 @@
   min-width: 0;
 }
 
+.macro-list-breadcrumb-item:not(.macro-list-breadcrumb-item-collapsed)
+  .macro-list-breadcrumb:hover,
+.macro-list-breadcrumb-item:not(.macro-list-breadcrumb-item-collapsed)
+  .macro-list-breadcrumb:focus-visible {
+  border-radius: 0.25rem;
+  background: var(--color-bg-tertiary);
+}
+
 .macro-folder-list {
   display: flex;
   flex-direction: column;
@@ -158,25 +166,75 @@
   font-size: 0.8rem;
 }
 
-.macro-folder-actions {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  display: flex;
-  gap: 0.35rem;
+.macro-folder-menu-trigger {
+  display: inline-flex;
   align-items: center;
-  padding: 0.15rem;
-  border-radius: 0.35rem;
-  background: var(--color-bg-secondary);
-  transform: translateY(-50%);
-  opacity: 0;
-  pointer-events: none;
+  justify-content: center;
+  padding: 0.2rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
 }
 
-.macro-list-breadcrumb-item:hover .macro-folder-actions,
-.macro-list-breadcrumb-item:focus-within .macro-folder-actions {
-  opacity: 1;
-  pointer-events: auto;
+.macro-folder-menu-trigger:hover,
+.macro-folder-menu-trigger:focus-visible {
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+}
+
+.macro-folder-actions {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border-radius: 0.35rem;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  z-index: 5;
+}
+
+.macro-folder-menu-title {
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.macro-folder-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.macro-folder-menu-action:hover,
+.macro-folder-menu-action:focus-visible {
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+}
+
+.macro-folder-menu-action-danger:hover,
+.macro-folder-menu-action-danger:focus-visible {
+  color: var(--color-error);
 }
 
 .macro-list-toolbar,
