@@ -18,15 +18,54 @@
 .macro-list-breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.15rem;
   margin-bottom: 0.75rem;
   color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .macro-list-breadcrumb-item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.macro-list-breadcrumb-item-collapsed {
+  flex: 0 0 auto;
+}
+
+.macro-list-breadcrumb-item-collapsed .macro-list-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 2rem;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--color-text-tertiary);
+}
+
+.macro-list-breadcrumb-item-collapsed .macro-list-breadcrumb-folder-icon {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.macro-list-breadcrumb-item-collapsed .macro-list-breadcrumb-label {
+  display: none;
+}
+
+.macro-list-breadcrumb-item-collapsed:hover .macro-list-breadcrumb {
+  width: min(12rem, 25vw);
+  color: var(--color-primary);
+  justify-content: flex-start;
+}
+
+.macro-list-breadcrumb-item-collapsed:hover .macro-list-breadcrumb-label {
+  display: inline;
 }
 
 .macro-list-breadcrumb {
@@ -36,6 +75,10 @@
   cursor: pointer;
   font-size: 0.9rem;
   padding: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .macro-folder-list {
@@ -90,9 +133,25 @@
 }
 
 .macro-folder-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
   display: flex;
   gap: 0.35rem;
   align-items: center;
+  padding: 0.15rem;
+  border-radius: 0.35rem;
+  background: var(--color-bg-secondary);
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.macro-list-breadcrumb-item:hover .macro-folder-actions,
+.macro-list-breadcrumb-item:focus-within .macro-folder-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .macro-list-toolbar,

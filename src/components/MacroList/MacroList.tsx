@@ -124,14 +124,34 @@ export function MacroList({
           >
             Snippets
           </button>
-          {folderPath.map((folder) => (
-            <span key={folder.id} className="macro-list-breadcrumb-item">
+          {folderPath.map((folder, index) => {
+            const isFirstFolder = index === 0;
+            const isCurrentFolder = index === folderPath.length - 1;
+
+            return (
+            <span
+              key={folder.id}
+              className={`macro-list-breadcrumb-item${
+                !isFirstFolder && !isCurrentFolder
+                  ? " macro-list-breadcrumb-item-collapsed"
+                  : ""
+              }`}
+            >
               <span className="material-symbols-outlined">chevron_right</span>
               <button
                 className="macro-list-breadcrumb"
                 onClick={() => setCurrentFolderId(folder.id)}
+                aria-current={isCurrentFolder ? "page" : undefined}
+                aria-label={`Ir para ${folder.name}`}
               >
-                {folder.name}
+                {!isFirstFolder && !isCurrentFolder && (
+                  <span className="material-symbols-outlined macro-list-breadcrumb-folder-icon">
+                    folder
+                  </span>
+                )}
+                <span className="macro-list-breadcrumb-label">
+                  {folder.name}
+                </span>
               </button>
               <span className="macro-folder-actions">
                 <button
@@ -169,7 +189,8 @@ export function MacroList({
                 </button>
               </span>
             </span>
-          ))}
+            );
+          })}
         </div>
         <h2 className="macro-list-title">
           <span className="material-symbols-outlined">list</span>
