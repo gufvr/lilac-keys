@@ -13,18 +13,45 @@ export function exportMacros(
   format: "json" | "txt" = "json",
   folders: Folder[] = [],
   folderId?: string,
+  macroIds?: string[],
 ): void {
   try {
     let dataStr: string;
     let mimeType: string;
     let extension: string;
+    const selectedMacroIds = macroIds ? new Set(macroIds) : undefined;
     const selectedFolderIds = folderId
       ? new Set(
           folders
             .filter((folder) => folder.id === folderId)
             .map((folder) => folder.id),
         )
-      : undefined;
+      : macroIds
+        ? new Set<string>()
+        : undefined;
+
+    if (selectedMacroIds) {
+      const macroFolderIds = new Set(
+        macros
+          .filter((macro) => selectedMacroIds.has(macro.id) && macro.folderId)
+          .map((macro) => macro.folderId as string),
+      );
+      let changed = true;
+      while (changed) {
+        changed = false;
+        folders.forEach((folder) => {
+          if (
+            macroFolderIds.has(folder.id) &&
+            folder.parentId &&
+            !macroFolderIds.has(folder.parentId)
+          ) {
+            macroFolderIds.add(folder.parentId);
+            changed = true;
+          }
+        });
+      }
+      macroFolderIds.forEach((id) => selectedFolderIds?.add(id));
+    }
 
     if (selectedFolderIds) {
       let changed = true;
@@ -44,14 +71,19 @@ export function exportMacros(
     }
 
     if (format === "txt") {
-      dataStr = buildTreeText(macros, folders, selectedFolderIds);
+      const selectedMacros = selectedMacroIds
+        ? macros.filter((macro) => selectedMacroIds.has(macro.id))
+        : macros;
+      dataStr = buildTreeText(selectedMacros, folders, selectedFolderIds);
       mimeType = "text/plain";
       extension = "txt";
     } else {
       const exportFolders = selectedFolderIds
         ? folders.filter((folder) => selectedFolderIds.has(folder.id))
         : folders;
-      const exportMacros = selectedFolderIds
+      const exportMacros = selectedMacroIds
+        ? macros.filter((macro) => selectedMacroIds.has(macro.id))
+        : selectedFolderIds
         ? macros.filter(
             (macro) => macro.folderId && selectedFolderIds.has(macro.folderId),
           )
@@ -69,9 +101,7 @@ export function exportMacros(
             })),
         ],
       );
-      const unfiled = selectedFolderIds
-        ? []
-        : macros.filter((macro) => !macro.folderId);
+      const unfiled = exportMacros.filter((macro) => !macro.folderId);
       if (unfiled.length > 0) {
         groups.push([
           "",
@@ -194,10 +224,6 @@ export async function importMacros(file: File): Promise<Macro[]> {
   });
 }
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, "").trim();
-}
-
 function buildTreeText(
   macros: Macro[],
   folders: Folder[],
@@ -219,7 +245,7 @@ function buildTreeText(
       .filter((macro) => macro.folderId === folderId)
       .forEach((macro) => {
         lines.push(`${indent}{${macro.atalho}}`);
-        lines.push(stripHtml(macro.textoExpandido).replace(/\r/g, ""));
+        lines.push(macro.textoExpandido.replace(/\r/g, ""));
       });
   };
 
@@ -384,7 +410,7 @@ function parseExternalData(data: unknown): Macro[] | null {
           id: crypto.randomUUID(),
           nome: item.name.trim(),
           atalho: item.name.trim(),
-          textoExpandido: stripHtml(item.body),
+          textoExpandido: item.body.trim(),
           ...(folderName ? { folderName } : {}),
         });
         return;

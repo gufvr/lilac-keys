@@ -6,6 +6,7 @@ interface MacroCardProps {
   macro: Macro;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
+  onExport?: (ids: string[], format: "json" | "txt") => void;
   selected?: boolean;
   onSelect?: (id: string) => void;
 }
@@ -14,6 +15,7 @@ export function MacroCard({
   macro,
   onEdit,
   onDelete,
+  onExport,
   selected = false,
   onSelect,
 }: MacroCardProps) {
@@ -60,6 +62,26 @@ export function MacroCard({
           >
             <span className="material-symbols-outlined">edit</span>
           </button>
+          {onExport && (
+            <>
+              <button
+                className="btn-icon"
+                onClick={() => onExport([macro.id], "json")}
+                aria-label={`Exportar macro ${macro.nome} em JSON`}
+                title="Exportar JSON"
+              >
+                <span className="material-symbols-outlined">download</span>
+              </button>
+              <button
+                className="btn-icon"
+                onClick={() => onExport([macro.id], "txt")}
+                aria-label={`Exportar macro ${macro.nome} em TXT`}
+                title="Exportar TXT"
+              >
+                <span className="material-symbols-outlined">description</span>
+              </button>
+            </>
+          )}
           <button
             className="btn-icon btn-icon-danger"
             onClick={handleDelete}

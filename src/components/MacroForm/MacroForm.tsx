@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { RichTextEditor } from "../RichTextEditor";
+import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import "./MacroForm.css";
 
 interface MacroFormProps {
@@ -18,6 +19,7 @@ export function MacroForm({
   onSuccess,
   folders = [],
 }: MacroFormProps) {
+  const folderTree = flattenFolders(folders);
   const [nome, setNome] = useState("");
   const [atalho, setAtalho] = useState("");
   const [textoExpandido, setTextoExpandido] = useState("");
@@ -104,9 +106,9 @@ export function MacroForm({
             onChange={(e) => setFolderId(e.target.value)}
           >
             <option value="">Sem pasta</option>
-            {folders.map((folder) => (
+            {folderTree.map(({ folder, level }) => (
               <option key={folder.id} value={folder.id}>
-                {folder.name}
+                {formatFolderLabel(folder.name, level)}
               </option>
             ))}
           </select>

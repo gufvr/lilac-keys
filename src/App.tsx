@@ -75,6 +75,10 @@ function App() {
     exportMacros(macros, format, folders, folderId);
   };
 
+  const handleExportMacros = (macroIds: string[], format: "json" | "txt") => {
+    exportMacros(macros, format, folders, undefined, macroIds);
+  };
+
   if (loading) {
     return (
       <div className="app-loading">
@@ -96,6 +100,7 @@ function App() {
             onCreateMacro={handleCreateMacro}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onExport={handleExportMacros}
             onCreateFolder={handleCreateFolder}
             onDeleteSelected={deleteSelected}
             onMoveSelected={moveSelected}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
+import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import "./MacroList.css";
 
 interface MacroListProps {
@@ -9,6 +10,7 @@ interface MacroListProps {
   onCreateMacro: () => void;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
+  onExport: (ids: string[], format: "json" | "txt") => void;
   onCreateFolder: (parentId?: string) => void;
   onDeleteSelected: (ids: string[]) => void;
   onMoveSelected: (ids: string[], folderId?: string) => void;
@@ -30,6 +32,7 @@ export function MacroList({
   onCreateMacro,
   onEdit,
   onDelete,
+  onExport,
   onCreateFolder,
   onDeleteSelected,
   onMoveSelected,
@@ -70,6 +73,7 @@ export function MacroList({
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [openFolderMenuId]);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
+  const folderTree = useMemo(() => flattenFolders(folders), [folders]);
   const childFolders = folders.filter(
     (folder) => folder.parentId === currentFolderId,
   );
@@ -87,11 +91,15 @@ export function MacroList({
       macros.filter((macro) => {
         const haystack =
           `${macro.nome} ${macro.atalho} ${macro.textoExpandido}`.toLowerCase();
+        const hasSearch = query.trim().length > 0;
+        const matchesLocation =
+          folderFilter !== "all"
+            ? (macro.folderId ?? "") === folderFilter
+            : currentFolderId === undefined
+              ? macro.folderId === undefined
+              : macro.folderId === currentFolderId;
         return (
-          (query.trim() || folderFilter !== "all"
-            ? folderFilter === "all" || (macro.folderId ?? "") === folderFilter
-            : currentFolderId === undefined ||
-              (macro.folderId ?? undefined) === currentFolderId) &&
+          (hasSearch || matchesLocation) &&
           haystack.includes(query.toLowerCase())
         );
       }),
@@ -350,9 +358,9 @@ export function MacroList({
         >
           <option value="all">Todas as pastas</option>
           <option value="">Sem pasta</option>
-          {folders.map((folder) => (
+          {folderTree.map(({ folder, level }) => (
             <option key={folder.id} value={folder.id}>
-              {folder.name}
+              {formatFolderLabel(folder.name, level)}
             </option>
           ))}
         </select>
@@ -408,6 +416,22 @@ export function MacroList({
             : "Selecionar todos"}
         </button>
         <span>{selected.length} selecionada(s)</span>
+        <button
+          className="btn btn-secondary"
+          disabled={!selected.length}
+          onClick={() => onExport(selected, "json")}
+        >
+          <span className="material-symbols-outlined">download</span>
+          Exportar JSON
+        </button>
+        <button
+          className="btn btn-secondary"
+          disabled={!selected.length}
+          onClick={() => onExport(selected, "txt")}
+        >
+          <span className="material-symbols-outlined">download</span>
+          Exportar TXT
+        </button>
         <select
           className="input"
           disabled={!selected.length}
@@ -420,9 +444,9 @@ export function MacroList({
         >
           <option value="">Mover para...</option>
           <option value="">Sem pasta</option>
-          {folders.map((folder) => (
+          {folderTree.map(({ folder, level }) => (
             <option key={folder.id} value={folder.id}>
-              {folder.name}
+              {formatFolderLabel(folder.name, level)}
             </option>
           ))}
         </select>
@@ -441,6 +465,7 @@ export function MacroList({
             macro={macro}
             onEdit={onEdit}
             onDelete={onDelete}
+            onExport={onExport}
             selected={selected.includes(macro.id)}
             onSelect={toggle}
           />
@@ -486,13 +511,13 @@ export function MacroList({
                 <span className="material-symbols-outlined">home</span>
                 Raiz
               </button>
-              {folders
+              {folderTree
                 .filter(
-                  (folder) =>
+                  ({ folder }) =>
                     folder.id !== folderToMove.id &&
                     !isDescendantOf(folder.id, folderToMove.id),
                 )
-                .map((folder) => (
+                .map(({ folder, level }) => (
                   <button
                     key={folder.id}
                     type="button"
@@ -500,7 +525,7 @@ export function MacroList({
                     onClick={() => moveFolder(folderToMove, folder.id)}
                   >
                     <span className="material-symbols-outlined">folder</span>
-                    {folder.name}
+                    {formatFolderLabel(folder.name, level)}
                   </button>
                 ))}
             </div>

@@ -87,13 +87,16 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     if (event.key !== "Tab" || !editorRef.current) return;
 
     const selection = window.getSelection();
-    const anchorNode = selection?.anchorNode;
-    const listItem = anchorNode?.parentElement?.closest("li");
+    const listItem = getListItem(selection?.anchorNode, editorRef.current);
 
-    if (!listItem || !editorRef.current.contains(listItem)) return;
+    if (!listItem) return;
 
     event.preventDefault();
-    document.execCommand(event.shiftKey ? "outdent" : "indent", false);
+    if (event.shiftKey) {
+      outdentListItem(listItem);
+    } else {
+      indentListItem(listItem);
+    }
     onChange(editorRef.current.innerHTML);
   };
 
@@ -141,4 +144,63 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
       />
     </div>
   );
+}
+
+function getListItem(
+  node: Node | null | undefined,
+  editor: HTMLElement,
+): HTMLLIElement | null {
+  let current: Node | null = node ?? null;
+  while (current && current !== editor) {
+    if (current instanceof HTMLLIElement) return current;
+    current = current.parentNode;
+  }
+  return null;
+}
+
+function indentListItem(listItem: HTMLLIElement): void {
+  const previousItem = listItem.previousElementSibling;
+  if (!(previousItem instanceof HTMLLIElement)) return;
+
+  const parentList = listItem.parentElement;
+  if (!(parentList instanceof HTMLUListElement || parentList instanceof HTMLOListElement)) {
+    return;
+  }
+
+  let nestedList = Array.from(previousItem.children).find(
+    (child) =>
+      child instanceof HTMLUListElement || child instanceof HTMLOListElement,
+  ) as HTMLUListElement | HTMLOListElement | undefined;
+
+  if (!nestedList) {
+    nestedList =
+      parentList instanceof HTMLUListElement
+        ? document.createElement("ul")
+        : document.createElement("ol");
+    previousItem.append(nestedList);
+  }
+
+  nestedList.append(listItem);
+}
+
+function outdentListItem(listItem: HTMLLIElement): void {
+  const parentList = listItem.parentElement;
+  const parentItem = parentList?.parentElement;
+  if (
+    !(parentList instanceof HTMLUListElement || parentList instanceof HTMLOListElement) ||
+    !(parentItem instanceof HTMLLIElement)
+  ) {
+    return;
+  }
+
+  const grandparentList = parentItem.parentElement;
+  if (
+    !(grandparentList instanceof HTMLUListElement) &&
+    !(grandparentList instanceof HTMLOListElement)
+  ) {
+    return;
+  }
+
+  grandparentList.insertBefore(listItem, parentItem.nextSibling);
+  if (parentList.children.length === 0) parentList.remove();
 }
