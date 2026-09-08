@@ -383,6 +383,13 @@
   color: var(--color-text-tertiary);
 }
 
+.macro-list-empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
 @media (max-width: 768px) {
   .macro-list-header,
   .macro-list-heading {
@@ -422,5 +429,15 @@
 
   .macro-list-grid {
     grid-template-columns: 1fr;
+  }
+
+  .macro-list-empty-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .macro-list-empty-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 }

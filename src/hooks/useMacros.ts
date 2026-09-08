@@ -113,14 +113,35 @@ export function useMacros() {
         allFolders.map((folder) => [folder.name.toLowerCase(), folder.id]),
       );
       setFolders(allFolders);
-      setMacros(
-        newMacros.map(({ folderName, ...macro }) => ({
-          ...macro,
-          folderId: folderName
-            ? folderIds.get(folderName.toLowerCase())
-            : macro.folderId,
-        })),
-      );
+      const importedMacros = newMacros.map(({ folderName, ...macro }) => ({
+        ...macro,
+        id: crypto.randomUUID(),
+        folderId: folderName
+          ? folderIds.get(folderName.toLowerCase())
+          : macro.folderId,
+      }));
+
+      setMacros((currentMacros) => {
+        const usedNames = new Set(
+          currentMacros.map((macro) => macro.nome.toLowerCase()),
+        );
+
+        const renamedMacros = importedMacros.map((macro) => {
+          const originalName = macro.nome;
+          let name = originalName;
+          let suffix = 1;
+
+          while (usedNames.has(name.toLowerCase())) {
+            name = `${originalName} (${suffix})`;
+            suffix += 1;
+          }
+
+          usedNames.add(name.toLowerCase());
+          return { ...macro, nome: name };
+        });
+
+        return [...currentMacros, ...renamedMacros];
+      });
     },
     [folders],
   );
@@ -189,7 +210,10 @@ export function useMacros() {
       const folder = folders.find((item) => item.id === id);
       if (!folder) return { success: false, error: "Pasta não encontrada" };
       if (parentId === id) {
-        return { success: false, error: "Uma pasta não pode ser movida para si mesma" };
+        return {
+          success: false,
+          error: "Uma pasta não pode ser movida para si mesma",
+        };
       }
 
       const descendantIds = new Set<string>();
@@ -222,7 +246,10 @@ export function useMacros() {
             item.name.toLowerCase() === folder.name.toLowerCase(),
         )
       ) {
-        return { success: false, error: "Já existe uma pasta com esse nome no destino" };
+        return {
+          success: false,
+          error: "Já existe uma pasta com esse nome no destino",
+        };
       }
 
       setFolders((prev) =>

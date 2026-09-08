@@ -42,12 +42,17 @@ export function MacroList({
   const [folderFilter, setFolderFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
-  const [openFolderMenuId, setOpenFolderMenuId] = useState<string | undefined>();
+  const [openFolderMenuId, setOpenFolderMenuId] = useState<
+    string | undefined
+  >();
   const [folderToMove, setFolderToMove] = useState<Folder | undefined>();
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (currentFolderId && !folders.some((folder) => folder.id === currentFolderId)) {
+    if (
+      currentFolderId &&
+      !folders.some((folder) => folder.id === currentFolderId)
+    ) {
       setCurrentFolderId(undefined);
     }
   }, [currentFolderId, folders]);
@@ -143,8 +148,21 @@ export function MacroList({
         <span className="material-symbols-outlined">inbox</span>
         <p>Nenhuma macro cadastrada ainda.</p>
         <p className="macro-list-empty-hint">
-          Crie sua primeira macro usando o formulário acima.
+          Comece criando sua primeira macro ou pasta.
         </p>
+        <div className="macro-list-empty-actions">
+          <button className="btn btn-primary" onClick={onCreateMacro}>
+            <span className="material-symbols-outlined">add</span>
+            Nova Macro
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => onCreateFolder()}
+          >
+            <span className="material-symbols-outlined">create_new_folder</span>
+            Nova pasta
+          </button>
+        </div>
       </div>
     );
   }
@@ -172,132 +190,138 @@ export function MacroList({
             const isCurrentFolder = index === folderPath.length - 1;
 
             return (
-            <span
-              key={folder.id}
-              className={`macro-list-breadcrumb-item${
-                !isFirstFolder && !isCurrentFolder
-                  ? " macro-list-breadcrumb-item-collapsed"
-                  : ""
-              }`}
-            >
-              <span className="material-symbols-outlined">chevron_right</span>
-              <button
-                type="button"
-                className="macro-list-breadcrumb"
-                onClick={() => setCurrentFolderId(folder.id)}
-                aria-current={isCurrentFolder ? "page" : undefined}
-                aria-label={`Ir para ${folder.name}`}
+              <span
+                key={folder.id}
+                className={`macro-list-breadcrumb-item${
+                  !isFirstFolder && !isCurrentFolder
+                    ? " macro-list-breadcrumb-item-collapsed"
+                    : ""
+                }`}
               >
-                {!isFirstFolder && !isCurrentFolder && (
-                  <span className="material-symbols-outlined macro-list-breadcrumb-folder-icon">
-                    folder
-                  </span>
-                )}
-                <span className="macro-list-breadcrumb-label">
-                  {folder.name}
-                </span>
-              </button>
-              {!isFirstFolder && !isCurrentFolder && (
+                <span className="material-symbols-outlined">chevron_right</span>
                 <button
                   type="button"
-                  className="macro-folder-preview"
+                  className="macro-list-breadcrumb"
                   onClick={() => setCurrentFolderId(folder.id)}
-                  aria-label={`Navegar para ${folder.name}`}
+                  aria-current={isCurrentFolder ? "page" : undefined}
+                  aria-label={`Ir para ${folder.name}`}
                 >
-                  {folder.name}
-                </button>
-              )}
-              <button
-                type="button"
-                className="macro-folder-menu-trigger"
-                aria-label={`Opções da pasta ${folder.name}`}
-                aria-expanded={openFolderMenuId === folder.id}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setOpenFolderMenuId((id) =>
-                    id === folder.id ? undefined : folder.id,
-                  );
-                }}
-              >
-                <span className="material-symbols-outlined">more_vert</span>
-              </button>
-              {openFolderMenuId === folder.id && (
-                <div className="macro-folder-actions" role="menu">
-                  <strong className="macro-folder-menu-title">
+                  {!isFirstFolder && !isCurrentFolder && (
+                    <span className="material-symbols-outlined macro-list-breadcrumb-folder-icon">
+                      folder
+                    </span>
+                  )}
+                  <span className="macro-list-breadcrumb-label">
                     {folder.name}
-                  </strong>
-                <button
-                  type="button"
-                  className="macro-folder-menu-action"
-                  title="Exportar pasta"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onExportFolder(folder.id, "json");
-                    setOpenFolderMenuId(undefined);
-                  }}
-                >
-                  <span className="material-symbols-outlined">download</span>
-                    Exportar pasta em JSON
-                  </button>
+                  </span>
+                </button>
+                {!isFirstFolder && !isCurrentFolder && (
                   <button
                     type="button"
-                    className="macro-folder-menu-action"
-                    title="Exportar pasta em TXT"
-                    role="menuitem"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onExportFolder(folder.id, "txt");
-                      setOpenFolderMenuId(undefined);
-                    }}
+                    className="macro-folder-preview"
+                    onClick={() => setCurrentFolderId(folder.id)}
+                    aria-label={`Navegar para ${folder.name}`}
                   >
-                    <span className="material-symbols-outlined">description</span>
-                    Exportar pasta em TXT
-                </button>
+                    {folder.name}
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="macro-folder-menu-action"
-                  role="menuitem"
+                  className="macro-folder-menu-trigger"
+                  aria-label={`Opções da pasta ${folder.name}`}
+                  aria-expanded={openFolderMenuId === folder.id}
                   onClick={(event) => {
                     event.stopPropagation();
-                    setFolderToMove(folder);
-                    setOpenFolderMenuId(undefined);
+                    setOpenFolderMenuId((id) =>
+                      id === folder.id ? undefined : folder.id,
+                    );
                   }}
                 >
-                  <span className="material-symbols-outlined">drive_file_move</span>
-                  Mover pasta
+                  <span className="material-symbols-outlined">more_vert</span>
                 </button>
-                <button
-                  type="button"
-                  className="macro-folder-menu-action"
-                  title="Renomear pasta"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    renameFolder(folder);
-                    setOpenFolderMenuId(undefined);
-                  }}
-                >
-                  <span className="material-symbols-outlined">edit</span>
-                  Renomear pasta
-                </button>
-                <button
-                  type="button"
-                  className="macro-folder-menu-action macro-folder-menu-action-danger"
-                  title="Excluir pasta"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteFolder(folder);
-                    setOpenFolderMenuId(undefined);
-                  }}
-                >
-                  <span className="material-symbols-outlined">delete</span>
-                  Excluir pasta
-                </button>
-                </div>
-              )}
-            </span>
+                {openFolderMenuId === folder.id && (
+                  <div className="macro-folder-actions" role="menu">
+                    <strong className="macro-folder-menu-title">
+                      {folder.name}
+                    </strong>
+                    <button
+                      type="button"
+                      className="macro-folder-menu-action"
+                      title="Exportar pasta"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onExportFolder(folder.id, "json");
+                        setOpenFolderMenuId(undefined);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">
+                        download
+                      </span>
+                      Exportar pasta em JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="macro-folder-menu-action"
+                      title="Exportar pasta em TXT"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onExportFolder(folder.id, "txt");
+                        setOpenFolderMenuId(undefined);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">
+                        description
+                      </span>
+                      Exportar pasta em TXT
+                    </button>
+                    <button
+                      type="button"
+                      className="macro-folder-menu-action"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setFolderToMove(folder);
+                        setOpenFolderMenuId(undefined);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">
+                        drive_file_move
+                      </span>
+                      Mover pasta
+                    </button>
+                    <button
+                      type="button"
+                      className="macro-folder-menu-action"
+                      title="Renomear pasta"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        renameFolder(folder);
+                        setOpenFolderMenuId(undefined);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">edit</span>
+                      Renomear pasta
+                    </button>
+                    <button
+                      type="button"
+                      className="macro-folder-menu-action macro-folder-menu-action-danger"
+                      title="Excluir pasta"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteFolder(folder);
+                        setOpenFolderMenuId(undefined);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">delete</span>
+                      Excluir pasta
+                    </button>
+                  </div>
+                )}
+              </span>
             );
           })}
         </div>
@@ -434,7 +458,8 @@ export function MacroList({
           aria-modal="true"
           aria-labelledby="macro-folder-move-title"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setFolderToMove(undefined);
+            if (event.target === event.currentTarget)
+              setFolderToMove(undefined);
           }}
         >
           <div className="macro-folder-move-dialog">

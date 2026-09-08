@@ -50,7 +50,7 @@ export function ImportExport({
 
       const confirmMessage =
         macros.length > 0
-          ? `Importar ${importedMacros.length} macro(s)? Isso substituirá as ${macros.length} macro(s) existente(s).`
+          ? `Importar ${importedMacros.length} macro(s)? As ${macros.length} macro(s) existente(s) serão preservadas.`
           : `Importar ${importedMacros.length} macro(s)?`;
 
       if (window.confirm(confirmMessage)) {
