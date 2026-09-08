@@ -4,11 +4,17 @@ const PLACEHOLDER_PATTERN = /%[^%\r\n]+%/g;
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Tab" && moveToNextPlaceholder(e)) return;
+  if (e.key !== " " || !e.shiftKey || !isSupportedEditable(document.activeElement)) {
+    return;
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
   void handleKeydown(e).catch((error: unknown) => {
     if (isExtensionContextInvalidated(error)) return;
     console.error("LilacKeys: erro ao processar atalho", error);
   });
-});
+}, true);
 
 async function handleKeydown(e: KeyboardEvent): Promise<void> {
   if (!(e.key === " " && e.shiftKey)) return;
@@ -21,8 +27,6 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
   if (!isPlainTextField && !isRichTextField) {
     return;
   }
-
-  e.preventDefault();
 
   const plainTextElement = isPlainTextField ? el : null;
   const richTextElement = isRichTextField ? el : null;
@@ -47,6 +51,16 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
   } catch (error) {
     console.error("LilacKeys: falha ao carregar macros", error);
   }
+}
+
+function isSupportedEditable(
+  element: Element | null,
+): element is HTMLInputElement | HTMLTextAreaElement | HTMLElement {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    (element instanceof HTMLElement && element.isContentEditable)
+  );
 }
 
 function loadMacros(): Promise<Macro[] | null> {
@@ -103,9 +117,18 @@ function expandMacro(
   valueBeforeCursor: string,
 ): void {
   const normalizedValueBeforeCursor = valueBeforeCursor.toLowerCase();
-  const macro = macros.find((item) =>
-    normalizedValueBeforeCursor.endsWith(item.atalho.toLowerCase()),
-  );
+  const matchingMacros = macros
+    .map((item) => ({
+      macro: item,
+      shortcut: item.atalho.trim().toLowerCase(),
+    }))
+    .filter(({ shortcut }) =>
+      shortcut.length > 0 && normalizedValueBeforeCursor.endsWith(shortcut),
+    )
+    .sort((first, second) => second.shortcut.length - first.shortcut.length);
+  const matchingMacro = matchingMacros[0];
+  const macro = matchingMacro?.macro;
+  const shortcutLength = matchingMacro?.shortcut.length ?? 0;
 
   if (!macro) {
     insertSpace(plainTextElement, richTextElement, start);
@@ -114,9 +137,9 @@ function expandMacro(
 
   if (plainTextElement) {
     const expandedText = htmlToText(macro.textoExpandido);
-    const replacementStart = start - macro.atalho.length;
+    const replacementStart = start - shortcutLength;
     plainTextElement.value =
-      plainTextElement.value.slice(0, start - macro.atalho.length) +
+      plainTextElement.value.slice(0, replacementStart) +
       expandedText +
       plainTextElement.value.slice(start);
     const cursor = replacementStart + expandedText.length;
@@ -126,7 +149,7 @@ function expandMacro(
     return;
   }
 
-  selectCharactersBeforeCursor(macro.atalho.length);
+  selectCharactersBeforeCursor(shortcutLength);
   document.execCommand("delete", false);
   document.execCommand(
     "insertHTML",
