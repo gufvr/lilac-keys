@@ -12,6 +12,7 @@ export interface Folder {
   name: string;
   createdAt: number;
   parentId?: string;
+  order?: number;
 }
 
 export interface MacroValidation {

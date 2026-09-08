@@ -24,6 +24,7 @@ function App() {
     moveSelected,
     renameFolder,
     moveFolder,
+    moveFolders,
     deleteFolder,
     deleteFolders,
   } = useMacros();
@@ -108,6 +109,7 @@ function App() {
             onMoveSelected={moveSelected}
             onRenameFolder={renameFolder}
             onMoveFolder={moveFolder}
+            onMoveFolders={moveFolders}
             onDeleteFolder={deleteFolder}
             onDeleteFolders={deleteFolders}
             onExportFolder={handleExportFolder}

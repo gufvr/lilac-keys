@@ -14,6 +14,13 @@ export function flattenFolders(folders: Folder[]): FolderTreeItem[] {
     childrenByParent.set(folder.parentId, children);
   });
 
+  childrenByParent.forEach((children) =>
+    children.sort(
+      (first, second) =>
+        (first.order ?? first.createdAt) - (second.order ?? second.createdAt),
+    ),
+  );
+
   const result: FolderTreeItem[] = [];
   const visit = (parentId: string | undefined, level: number) => {
     (childrenByParent.get(parentId) ?? []).forEach((folder) => {

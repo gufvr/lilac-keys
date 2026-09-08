@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
@@ -21,6 +21,12 @@ interface MacroListProps {
   onMoveFolder: (
     id: string,
     parentId?: string,
+    placement?: "inside" | "above" | "below",
+    relativeToId?: string,
+  ) => { success: boolean; error?: string };
+  onMoveFolders: (
+    ids: string[],
+    parentId?: string,
   ) => { success: boolean; error?: string };
   onDeleteFolder: (id: string) => void;
   onDeleteFolders: (ids: string[]) => void;
@@ -39,6 +45,7 @@ export function MacroList({
   onMoveSelected,
   onRenameFolder,
   onMoveFolder,
+  onMoveFolders,
   onDeleteFolder,
   onDeleteFolders,
   onExportFolder,
@@ -77,8 +84,16 @@ export function MacroList({
   }, [openFolderMenuId]);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const folderTree = useMemo(() => flattenFolders(folders), [folders]);
-  const childFolders = folders.filter(
-    (folder) => folder.parentId === currentFolderId,
+  const childFolders = useMemo(
+    () =>
+      folders
+        .filter((folder) => folder.parentId === currentFolderId)
+        .sort(
+          (first, second) =>
+            (first.order ?? first.createdAt) -
+            (second.order ?? second.createdAt),
+        ),
+    [folders, currentFolderId],
   );
   const folderPath = useMemo(() => {
     const path: Folder[] = [];
@@ -160,10 +175,20 @@ export function MacroList({
       }
     }
   };
-  const moveFolder = (folder: Folder, parentId?: string) => {
-    const result = onMoveFolder(folder.id, parentId);
+  const moveFolder = (
+    folder: Folder,
+    parentId?: string,
+    placement: "inside" | "above" | "below" = "inside",
+    relativeToId?: string,
+  ) => {
+    const result = onMoveFolder(folder.id, parentId, placement, relativeToId);
     if (!result.success) window.alert(result.error);
     if (result.success) setFolderToMove(undefined);
+  };
+  const moveSelectedFolders = (parentId?: string) => {
+    const result = onMoveFolders(selectedFolders, parentId);
+    if (!result.success) window.alert(result.error);
+    else setSelectedFolders([]);
   };
   const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
     let folder = folders.find((item) => item.id === folderId);
@@ -325,6 +350,46 @@ export function MacroList({
                       </span>
                       Mover pasta
                     </button>
+                    {folders
+                      .filter(
+                        (item) =>
+                          item.parentId === folder.parentId &&
+                          item.id !== folder.id,
+                      )
+                      .map((item) => (
+                        <Fragment key={item.id}>
+                          <button
+                            type="button"
+                            className="macro-folder-menu-action"
+                            role="menuitem"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              moveFolder(folder, item.parentId, "above", item.id);
+                              setOpenFolderMenuId(undefined);
+                            }}
+                          >
+                            <span className="material-symbols-outlined">
+                              vertical_align_top
+                            </span>
+                            Acima de {item.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="macro-folder-menu-action"
+                            role="menuitem"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              moveFolder(folder, item.parentId, "below", item.id);
+                              setOpenFolderMenuId(undefined);
+                            }}
+                          >
+                            <span className="material-symbols-outlined">
+                              vertical_align_bottom
+                            </span>
+                            Abaixo de {item.name}
+                          </button>
+                        </Fragment>
+                      ))}
                     <button
                       type="button"
                       className="macro-folder-menu-action"
@@ -393,6 +458,35 @@ export function MacroList({
               : "Selecionar todas as pastas"}
           </button>
         )}
+        <select
+          className="input"
+          disabled={!selectedFolders.length}
+          defaultValue=""
+          aria-label="Mover pastas selecionadas para"
+          onChange={(event) => {
+            if (event.target.value !== "") {
+              moveSelectedFolders(
+                event.target.value === "root" ? undefined : event.target.value,
+              );
+            }
+            event.target.value = "";
+          }}
+        >
+          <option value="">Mover pastas para...</option>
+          <option value="root">Raiz</option>
+          <optgroup label="Pastas">
+            {folderTree.map(({ folder, level }) => (
+              <option
+                key={folder.id}
+                value={folder.id}
+                disabled={selectedFolders.includes(folder.id)}
+              >
+                {formatFolderLabel(folder.name, level)}
+                {selectedFolders.includes(folder.id) ? " (selecionada)" : ""}
+              </option>
+            ))}
+          </optgroup>
+        </select>
         <button className="btn btn-secondary" onClick={selectAll}>
           {selected.length === filteredMacros.length
             ? "Desmarcar todos"
@@ -477,8 +571,25 @@ export function MacroList({
               <div
                 key={folder.id}
                 className="macro-folder-row"
+                draggable
                 role="button"
                 tabIndex={0}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("text/folder-id", folder.id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const draggedId = event.dataTransfer.getData("text/folder-id");
+                  const draggedFolder = folders.find((item) => item.id === draggedId);
+                  if (draggedFolder && draggedFolder.id !== folder.id) {
+                    moveFolder(draggedFolder, folder.id);
+                  }
+                }}
                 onClick={() => {
                   setCurrentFolderId(folder.id);
                   setSelected([]);

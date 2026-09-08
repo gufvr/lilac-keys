@@ -167,6 +167,7 @@ export function useMacros() {
           name: trimmedName,
           createdAt: Date.now(),
           parentId,
+          order: Date.now(),
         },
       ]);
       return { success: true };
@@ -206,10 +207,20 @@ export function useMacros() {
   );
 
   const moveFolder = useCallback(
-    (id: string, parentId?: string): { success: boolean; error?: string } => {
+    (
+      id: string,
+      parentId?: string,
+      placement: "inside" | "above" | "below" = "inside",
+      relativeToId?: string,
+    ): { success: boolean; error?: string } => {
       const folder = folders.find((item) => item.id === id);
       if (!folder) return { success: false, error: "Pasta não encontrada" };
-      if (parentId === id) {
+      const relativeTo = relativeToId
+        ? folders.find((item) => item.id === relativeToId)
+        : undefined;
+      const destinationParent =
+        placement === "inside" ? parentId : relativeTo?.parentId;
+      if (parentId === id || destinationParent === id) {
         return {
           success: false,
           error: "Uma pasta não pode ser movida para si mesma",
@@ -232,7 +243,7 @@ export function useMacros() {
         });
       }
 
-      if (parentId && descendantIds.has(parentId)) {
+      if (destinationParent && descendantIds.has(destinationParent)) {
         return {
           success: false,
           error: "Uma pasta não pode ser movida para dentro de uma subpasta",
@@ -242,7 +253,7 @@ export function useMacros() {
         folders.some(
           (item) =>
             item.id !== id &&
-            item.parentId === parentId &&
+            item.parentId === destinationParent &&
             item.name.toLowerCase() === folder.name.toLowerCase(),
         )
       ) {
@@ -252,9 +263,112 @@ export function useMacros() {
         };
       }
 
-      setFolders((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, parentId } : item)),
+      setFolders((prev) => {
+        const siblings = prev
+          .filter(
+            (item) =>
+              item.parentId === destinationParent && item.id !== id,
+          )
+          .sort(
+            (first, second) =>
+              (first.order ?? first.createdAt) -
+              (second.order ?? second.createdAt),
+          );
+        const targetIndex = relativeTo
+          ? siblings.findIndex((item) => item.id === relativeTo.id)
+          : siblings.length;
+        const insertAt =
+          placement === "above"
+            ? Math.max(targetIndex, 0)
+            : placement === "below"
+              ? targetIndex + 1
+              : siblings.length;
+        siblings.splice(insertAt, 0, {
+          ...folder,
+          parentId: destinationParent,
+        });
+        const orderById = new Map(
+          siblings.map((item, index) => [item.id, index]),
+        );
+        return prev.map((item) =>
+          orderById.has(item.id)
+            ? {
+                ...item,
+                parentId:
+                  item.id === id ? destinationParent : item.parentId,
+                order: orderById.get(item.id),
+              }
+            : item,
+        );
+      });
+      return { success: true };
+    },
+    [folders],
+  );
+
+  const moveFolders = useCallback(
+    (
+      ids: string[],
+      parentId?: string,
+    ): { success: boolean; error?: string } => {
+      const selectedIds = new Set(ids);
+      const selectedFolders = folders.filter((folder) => selectedIds.has(folder.id));
+      if (!selectedFolders.length) {
+        return { success: false, error: "Nenhuma pasta selecionada" };
+      }
+      if (parentId && selectedIds.has(parentId)) {
+        return {
+          success: false,
+          error: "Uma pasta não pode ser movida para dentro dela mesma",
+        };
+      }
+      let ancestor = folders.find((folder) => folder.id === parentId);
+      while (ancestor) {
+        if (selectedIds.has(ancestor.id)) {
+          return {
+            success: false,
+            error: "Uma pasta não pode ser movida para dentro de uma subpasta selecionada",
+          };
+        }
+        ancestor = folders.find((folder) => folder.id === ancestor?.parentId);
+      }
+      const destinationNames = new Set(
+        folders
+          .filter(
+            (folder) =>
+              folder.parentId === parentId && !selectedIds.has(folder.id),
+          )
+          .map((folder) => folder.name.toLowerCase()),
       );
+      if (
+        selectedFolders.some((folder) =>
+          destinationNames.has(folder.name.toLowerCase()),
+        )
+      ) {
+        return {
+          success: false,
+          error: "Já existe uma pasta com esse nome no destino",
+        };
+      }
+      setFolders((prev) => {
+        const siblings = prev.filter(
+          (folder) =>
+            folder.parentId === parentId && !selectedIds.has(folder.id),
+        );
+        const moved = selectedFolders.map((folder) => ({ ...folder, parentId }));
+        const orderById = new Map(
+          [...siblings, ...moved].map((folder, index) => [folder.id, index]),
+        );
+        return prev.map((folder) =>
+          orderById.has(folder.id)
+            ? {
+                ...folder,
+                parentId: selectedIds.has(folder.id) ? parentId : folder.parentId,
+                order: orderById.get(folder.id),
+              }
+            : folder,
+        );
+      });
       return { success: true };
     },
     [folders],
@@ -318,6 +432,7 @@ export function useMacros() {
     moveSelected,
     renameFolder,
     moveFolder,
+    moveFolders,
     deleteFolder,
     deleteFolders,
   };
