@@ -7,7 +7,17 @@ type ExternalSnippet = {
   timestamp?: number;
 };
 
-type ExternalFolder = [string, number, ...ExternalSnippet[]];
+export interface ImportedData {
+  macros: Macro[];
+  folders: Folder[];
+}
+
+interface ExportPayload {
+  format: "lilac-keys";
+  version: 2;
+  folders: Folder[];
+  macros: Macro[];
+}
 
 export function exportMacros(
   macros: Macro[],
@@ -89,34 +99,20 @@ export function exportMacros(
             (macro) => macro.folderId && selectedFolderIds.has(macro.folderId),
           )
         : macros;
-      const groups = exportFolders.map(
-        (folder): ExternalFolder => [
-          folder.name,
-          folder.createdAt,
-          ...exportMacros
-            .filter((macro) => macro.folderId === folder.id)
-            .map((macro) => ({
-              name: macro.nome,
-              shortcut: macro.atalho,
-              body: macro.textoExpandido,
-              timestamp: Date.now(),
-            })),
-        ],
-      );
-      const unfiled = exportMacros.filter((macro) => !macro.folderId);
-      if (unfiled.length > 0) {
-        groups.push([
-          "",
-          Date.now(),
-          ...unfiled.map((macro) => ({
-            name: macro.nome,
-            shortcut: macro.atalho,
-            body: macro.textoExpandido,
-            timestamp: Date.now(),
-          })),
-        ]);
-      }
-      dataStr = JSON.stringify(groups, null, 2);
+      const exportedFolderIds = new Set(exportFolders.map((folder) => folder.id));
+      const payload: ExportPayload = {
+        format: "lilac-keys",
+        version: 2,
+        folders: exportFolders.map((folder) => ({
+          ...folder,
+          parentId:
+            folder.parentId && exportedFolderIds.has(folder.parentId)
+              ? folder.parentId
+              : undefined,
+        })),
+        macros: exportMacros.map((macro) => ({ ...macro })),
+      };
+      dataStr = JSON.stringify(payload, null, 2);
       mimeType = "application/json";
       extension = "json";
     }
@@ -138,7 +134,7 @@ export function exportMacros(
   }
 }
 
-export async function importMacros(file: File): Promise<Macro[]> {
+export async function importMacros(file: File): Promise<ImportedData> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -148,16 +144,16 @@ export async function importMacros(file: File): Promise<Macro[]> {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith(".txt")) {
-          const externalMacros = parseExternalText(content);
+          const externalData = parseExternalText(content);
 
-          if (externalMacros) {
-            resolve(externalMacros);
+          if (externalData) {
+            resolve(externalData);
             return;
           }
 
           const commaMacros = parseCommaText(content);
           if (commaMacros) {
-            resolve(commaMacros);
+            resolve({ macros: commaMacros, folders: [] });
             return;
           }
 
@@ -180,16 +176,30 @@ export async function importMacros(file: File): Promise<Macro[]> {
             };
           });
 
-          resolve(macros);
+          resolve({ macros, folders: [] });
           return;
         }
 
         const parsed = JSON.parse(content);
 
-        const externalMacros = parseExternalData(parsed);
+        const externalData = parseExternalData(parsed);
 
-        if (externalMacros) {
-          resolve(externalMacros);
+        if (externalData) {
+          resolve(externalData);
+          return;
+        }
+
+        if (isExportPayload(parsed)) {
+          resolve({
+            macros: parsed.macros.map((macro) => ({
+              ...macro,
+              id: crypto.randomUUID(),
+            })),
+            folders: parsed.folders.map((folder) => ({
+              ...folder,
+              id: folder.id,
+            })),
+          });
           return;
         }
 
@@ -215,7 +225,7 @@ export async function importMacros(file: File): Promise<Macro[]> {
           id: macro.id ?? crypto.randomUUID(),
         }));
 
-        resolve(macros);
+        resolve({ macros, folders: [] });
       } catch (error) {
         reject(
           error instanceof Error
@@ -231,6 +241,17 @@ export async function importMacros(file: File): Promise<Macro[]> {
 
     reader.readAsText(file);
   });
+}
+
+function isExportPayload(data: unknown): data is ExportPayload {
+  if (typeof data !== "object" || data === null) return false;
+  const payload = data as Partial<ExportPayload>;
+  return (
+    payload.format === "lilac-keys" &&
+    payload.version === 2 &&
+    Array.isArray(payload.macros) &&
+    Array.isArray(payload.folders)
+  );
 }
 
 function buildTreeText(
@@ -275,11 +296,11 @@ function buildTreeText(
   return lines.join("\n");
 }
 
-function parseExternalText(content: string): Macro[] | null {
+function parseExternalText(content: string): ImportedData | null {
   const trimmedContent = content.trim();
 
   const treeMacros = parseTreeText(trimmedContent);
-  if (treeMacros) return treeMacros;
+  if (treeMacros) return { macros: treeMacros, folders: [] };
 
   try {
     const parsed = JSON.parse(trimmedContent);
@@ -441,7 +462,7 @@ function extractJsonObjects(content: string): unknown[] {
   return objects;
 }
 
-function parseExternalData(data: unknown): Macro[] | null {
+function parseExternalData(data: unknown): ImportedData | null {
   const snippets =
     typeof data === "object" && data !== null && "snippets" in data
       ? (data as { snippets?: unknown }).snippets
@@ -450,7 +471,12 @@ function parseExternalData(data: unknown): Macro[] | null {
   if (!Array.isArray(snippets)) return null;
 
   const macros: Macro[] = [];
-  const visit = (items: unknown[], folderPath: string[]) => {
+  const folders: Folder[] = [];
+  const visit = (
+    items: unknown[],
+    parentId: string | undefined,
+    folderPath: string[],
+  ) => {
     items.forEach((item) => {
       if (isExternalSnippet(item)) {
         const folderName = folderPath[folderPath.length - 1];
@@ -459,6 +485,7 @@ function parseExternalData(data: unknown): Macro[] | null {
           nome: item.name.trim(),
           atalho: item.shortcut?.trim() || item.name.trim(),
           textoExpandido: item.body.trim(),
+          ...(parentId ? { folderId: parentId } : {}),
           ...(folderName ? { folderName } : {}),
         });
         return;
@@ -467,16 +494,25 @@ function parseExternalData(data: unknown): Macro[] | null {
       if (!Array.isArray(item) || typeof item[0] !== "string") return;
 
       const folderName = item[0].trim();
-      const nextPath =
-        folderName.toLowerCase() === "snippets"
-          ? folderPath
-          : [...folderPath, folderName];
-      visit(item.slice(2), nextPath);
+      if (folderName.toLowerCase() === "snippets") {
+        visit(item.slice(2), parentId, folderPath);
+        return;
+      }
+
+      const folder: Folder = {
+        id: crypto.randomUUID(),
+        name: folderName,
+        createdAt: typeof item[1] === "number" ? item[1] : Date.now(),
+        parentId,
+        order: folders.length,
+      };
+      folders.push(folder);
+      visit(item.slice(2), folder.id, [...folderPath, folderName]);
     });
   };
 
-  visit(snippets, []);
-  return macros.length > 0 ? macros : null;
+  visit(snippets, undefined, []);
+  return macros.length > 0 ? { macros, folders } : null;
 }
 
 function isExternalSnippet(item: unknown): item is ExternalSnippet {

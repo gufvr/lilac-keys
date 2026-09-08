@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Folder, Macro } from "../types/macro";
 import { StorageService } from "../services/storageService";
 import { validateMacro, isShortcutUnique } from "../utils/macroValidation";
+import { Folder as ImportedFolder } from "../types/macro";
 
 export function useMacros() {
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -90,10 +91,45 @@ export function useMacros() {
   );
 
   const replaceMacros = useCallback(
-    (newMacros: Macro[]): void => {
+    (newMacros: Macro[], importedFolders: ImportedFolder[] = []): void => {
+      const importedFolderIds = new Map<string, string>();
+      const importedFoldersByParent = new Map<string | undefined, ImportedFolder[]>();
+      importedFolders.forEach((folder) => {
+        const siblings = importedFoldersByParent.get(folder.parentId) ?? [];
+        siblings.push(folder);
+        importedFoldersByParent.set(folder.parentId, siblings);
+      });
+
+      const createImportedFolders = (
+        parentId: string | undefined,
+        sourceParentId: string | undefined,
+      ): Folder[] => {
+        const created: Folder[] = [];
+        const children = (importedFoldersByParent.get(sourceParentId) ?? []).sort(
+          (first, second) =>
+            (first.order ?? first.createdAt) -
+            (second.order ?? second.createdAt),
+        );
+
+        children.forEach((folder) => {
+          const newId = crypto.randomUUID();
+          importedFolderIds.set(folder.id, newId);
+          created.push({
+            ...folder,
+            id: newId,
+            parentId,
+          });
+          created.push(...createImportedFolders(newId, folder.id));
+        });
+
+        return created;
+      };
+
+      const importedTree = createImportedFolders(undefined, undefined);
       const importedFolderNames = [
         ...new Set(
           newMacros
+            .filter((macro) => !macro.folderId)
             .map((macro) => macro.folderName)
             .filter((name): name is string => Boolean(name)),
         ),
@@ -108,7 +144,7 @@ export function useMacros() {
           name,
           createdAt: Date.now(),
         }));
-      const allFolders = [...folders, ...missingFolders];
+      const allFolders = [...folders, ...missingFolders, ...importedTree];
       const folderIds = new Map(
         allFolders.map((folder) => [folder.name.toLowerCase(), folder.id]),
       );
@@ -116,9 +152,11 @@ export function useMacros() {
       const importedMacros = newMacros.map(({ folderName, ...macro }) => ({
         ...macro,
         id: crypto.randomUUID(),
-        folderId: folderName
-          ? folderIds.get(folderName.toLowerCase())
-          : macro.folderId,
+        folderId: macro.folderId
+          ? importedFolderIds.get(macro.folderId) ?? macro.folderId
+          : folderName
+            ? folderIds.get(folderName.toLowerCase())
+            : undefined,
       }));
 
       setMacros((currentMacros) => {

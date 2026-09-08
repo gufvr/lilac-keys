@@ -2,6 +2,7 @@ import { useState } from "react";
 import manifest from "../manifest.json";
 import { useMacros } from "./hooks/useMacros";
 import { Macro } from "./types/macro";
+import { ImportedData } from "./utils/exportImport";
 import { Header } from "./components/Header/Header";
 import { MacroForm } from "./components/MacroForm/MacroForm";
 import { MacroList } from "./components/MacroList/MacroList";
@@ -63,8 +64,8 @@ function App() {
     }
   };
 
-  const handleImport = (importedMacros: Macro[]) => {
-    replaceMacros(importedMacros);
+  const handleImport = (importedData: ImportedData) => {
+    replaceMacros(importedData.macros, importedData.folders);
   };
 
   const handleCreateFolder = (parentId?: string) => {

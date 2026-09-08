@@ -1,11 +1,15 @@
 import { useRef } from "react";
 import { Folder, Macro } from "../../types/macro";
-import { exportMacros, importMacros } from "../../utils/exportImport";
+import {
+  exportMacros,
+  importMacros,
+  ImportedData,
+} from "../../utils/exportImport";
 import "./ImportExport.css";
 
 interface ImportExportProps {
   macros: Macro[];
-  onImport: (macros: Macro[]) => void;
+  onImport: (data: ImportedData) => void;
   folders?: Folder[];
 }
 
@@ -41,7 +45,8 @@ export function ImportExport({
     if (!file) return;
 
     try {
-      const importedMacros = await importMacros(file);
+      const importedData = await importMacros(file);
+      const importedMacros = importedData.macros;
 
       if (importedMacros.length === 0) {
         alert("O arquivo não contém macros válidas");
@@ -54,7 +59,7 @@ export function ImportExport({
           : `Importar ${importedMacros.length} macro(s)?`;
 
       if (window.confirm(confirmMessage)) {
-        onImport(importedMacros);
+        onImport(importedData);
         alert(`${importedMacros.length} macro(s) importada(s) com sucesso!`);
       }
     } catch (error) {
