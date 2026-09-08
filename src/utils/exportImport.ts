@@ -2,6 +2,7 @@ import { Folder, Macro } from "../types/macro";
 
 type ExternalSnippet = {
   name: string;
+  shortcut?: string;
   body: string;
   timestamp?: number;
 };
@@ -95,7 +96,8 @@ export function exportMacros(
           ...exportMacros
             .filter((macro) => macro.folderId === folder.id)
             .map((macro) => ({
-              name: macro.atalho,
+              name: macro.nome,
+              shortcut: macro.atalho,
               body: macro.textoExpandido,
               timestamp: Date.now(),
             })),
@@ -107,7 +109,8 @@ export function exportMacros(
           "",
           Date.now(),
           ...unfiled.map((macro) => ({
-            name: macro.atalho,
+            name: macro.nome,
+            shortcut: macro.atalho,
             body: macro.textoExpandido,
             timestamp: Date.now(),
           })),
@@ -149,6 +152,12 @@ export async function importMacros(file: File): Promise<Macro[]> {
 
           if (externalMacros) {
             resolve(externalMacros);
+            return;
+          }
+
+          const commaMacros = parseCommaText(content);
+          if (commaMacros) {
+            resolve(commaMacros);
             return;
           }
 
@@ -245,6 +254,7 @@ function buildTreeText(
       .filter((macro) => macro.folderId === folderId)
       .forEach((macro) => {
         lines.push(`${indent}{${macro.atalho}}`);
+        lines.push(`${indent}<macro-name>${macro.nome}</macro-name>`);
         lines.push(macro.textoExpandido.replace(/\r/g, ""));
       });
   };
@@ -320,6 +330,10 @@ function parseTreeText(content: string): Macro[] | null {
       continue;
     }
 
+    const nameLine = lines[index + 1]?.trim();
+    const nameMatch = nameLine?.match(/^<macro-name>(.*)<\/macro-name>$/);
+    if (nameMatch) index += 1;
+
     const bodyLines: string[] = [];
     index += 1;
     while (index < lines.length) {
@@ -340,9 +354,43 @@ function parseTreeText(content: string): Macro[] | null {
         ? { folderName: folderStack[folderStack.length - 1].name }
         : {}),
     });
+
+    if (nameMatch) {
+      macros[macros.length - 1].nome = nameMatch[1].trim();
+    }
   }
 
   return macros.length > 0 ? macros : null;
+}
+
+function parseCommaText(content: string): Macro[] | null {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (
+    lines.length === 0 ||
+    !lines.every((line) => {
+      const separatorIndex = line.indexOf(",");
+      return separatorIndex > 0 && separatorIndex < line.length - 1;
+    })
+  ) {
+    return null;
+  }
+
+  return lines.map((line) => {
+    const separatorIndex = line.indexOf(",");
+    const name = line.slice(0, separatorIndex).trim();
+    const body = line.slice(separatorIndex + 1).trim();
+
+    return {
+      id: crypto.randomUUID(),
+      nome: name,
+      atalho: name,
+      textoExpandido: body,
+    };
+  });
 }
 
 function extractJsonObjects(content: string): unknown[] {
@@ -405,11 +453,11 @@ function parseExternalData(data: unknown): Macro[] | null {
   const visit = (items: unknown[], folderPath: string[]) => {
     items.forEach((item) => {
       if (isExternalSnippet(item)) {
-        const folderName = folderPath.join(" / ");
+        const folderName = folderPath[folderPath.length - 1];
         macros.push({
           id: crypto.randomUUID(),
           nome: item.name.trim(),
-          atalho: item.name.trim(),
+          atalho: item.shortcut?.trim() || item.name.trim(),
           textoExpandido: item.body.trim(),
           ...(folderName ? { folderName } : {}),
         });

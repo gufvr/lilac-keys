@@ -260,9 +260,9 @@ export function useMacros() {
     [folders],
   );
 
-  const deleteFolder = useCallback(
-    (id: string): void => {
-      const idsToDelete = new Set<string>([id]);
+  const deleteFolders = useCallback(
+    (ids: string[]): void => {
+      const idsToDelete = new Set<string>(ids);
       let changed = true;
       while (changed) {
         changed = false;
@@ -289,6 +289,13 @@ export function useMacros() {
     [folders],
   );
 
+  const deleteFolder = useCallback(
+    (id: string): void => {
+      deleteFolders([id]);
+    },
+    [deleteFolders],
+  );
+
   const moveSelected = useCallback((ids: string[], folderId?: string): void => {
     setMacros((prev) =>
       prev.map((macro) =>
@@ -312,5 +319,6 @@ export function useMacros() {
     renameFolder,
     moveFolder,
     deleteFolder,
+    deleteFolders,
   };
 }

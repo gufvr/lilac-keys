@@ -23,6 +23,7 @@ interface MacroListProps {
     parentId?: string,
   ) => { success: boolean; error?: string };
   onDeleteFolder: (id: string) => void;
+  onDeleteFolders: (ids: string[]) => void;
   onExportFolder: (id: string, format: "json" | "txt") => void;
 }
 
@@ -39,11 +40,13 @@ export function MacroList({
   onRenameFolder,
   onMoveFolder,
   onDeleteFolder,
+  onDeleteFolders,
   onExportFolder,
 }: MacroListProps) {
   const [query, setQuery] = useState("");
   const [folderFilter, setFolderFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
   const [openFolderMenuId, setOpenFolderMenuId] = useState<
     string | undefined
@@ -109,16 +112,36 @@ export function MacroList({
     setSelected((ids) =>
       ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
     );
+  const toggleFolder = (id: string) =>
+    setSelectedFolders((ids) =>
+      ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
+    );
   const selectAll = () =>
     setSelected(
       selected.length === filteredMacros.length
         ? []
         : filteredMacros.map((macro) => macro.id),
     );
+  const selectAllFolders = () =>
+    setSelectedFolders(
+      selectedFolders.length === childFolders.length
+        ? []
+        : childFolders.map((folder) => folder.id),
+    );
   const bulkDelete = () => {
     if (window.confirm(`Excluir ${selected.length} macro(s)?`)) {
       onDeleteSelected(selected);
       setSelected([]);
+    }
+  };
+  const bulkDeleteFolders = () => {
+    if (
+      window.confirm(
+        `Excluir ${selectedFolders.length} pasta(s) e todo o seu conteúdo?`,
+      )
+    ) {
+      onDeleteFolders(selectedFolders);
+      setSelectedFolders([]);
     }
   };
   const renameFolder = (folder: Folder) => {
@@ -350,72 +373,26 @@ export function MacroList({
           </button>
         </div>
       </div>
-      <div className="macro-list-toolbar">
-        <input
-          className="input"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Pesquisar nome, atalho ou texto..."
-        />
-        <select
-          className="input"
-          value={folderFilter}
-          onChange={(e) => setFolderFilter(e.target.value)}
-        >
-          <option value="all">Todas as pastas</option>
-          <option value="">Sem pasta</option>
-          {folderTree.map(({ folder, level }) => (
-            <option key={folder.id} value={folder.id}>
-              {formatFolderLabel(folder.name, level)}
-            </option>
-          ))}
-        </select>
-        <button
-          className="btn btn-secondary"
-          onClick={() => onCreateFolder(currentFolderId)}
-        >
-          <span className="material-symbols-outlined">create_new_folder</span>
-          Nova pasta
-        </button>
-      </div>
-      {query.trim() === "" &&
-        folderFilter === "all" &&
-        childFolders.length > 0 && (
-          <div className="macro-folder-list">
-            {childFolders.map((folder) => (
-              <div
-                key={folder.id}
-                className="macro-folder-row"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  setCurrentFolderId(folder.id);
-                  setSelected([]);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setCurrentFolderId(folder.id);
-                    setSelected([]);
-                  }
-                }}
-              >
-                <span className="macro-folder-name">
-                  <span className="material-symbols-outlined">folder</span>
-                  {folder.name}
-                </span>
-                <span className="macro-folder-count">
-                  {
-                    macros.filter((macro) => macro.folderId === folder.id)
-                      .length
-                  }{" "}
-                  snippet(s)
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
       <div className="macro-list-bulk">
+        {childFolders.length > 0 && (
+          <>
+            <span>{selectedFolders.length} pasta(s) selecionada(s)</span>
+            <button
+              className="btn btn-danger"
+              disabled={!selectedFolders.length}
+              onClick={bulkDeleteFolders}
+            >
+              Excluir pastas selecionadas
+            </button>
+          </>
+        )}
+        {childFolders.length > 0 && (
+          <button className="btn btn-secondary" onClick={selectAllFolders}>
+            {selectedFolders.length === childFolders.length
+              ? "Desmarcar todas as pastas"
+              : "Selecionar todas as pastas"}
+          </button>
+        )}
         <button className="btn btn-secondary" onClick={selectAll}>
           {selected.length === filteredMacros.length
             ? "Desmarcar todos"
@@ -464,6 +441,89 @@ export function MacroList({
           Excluir selecionadas
         </button>
       </div>
+      <div className="macro-list-toolbar">
+        <input
+          className="input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Pesquisar nome, atalho ou texto..."
+        />
+        <select
+          className="input"
+          value={folderFilter}
+          onChange={(e) => setFolderFilter(e.target.value)}
+        >
+          <option value="all">Todas as pastas</option>
+          <option value="">Sem pasta</option>
+          {folderTree.map(({ folder, level }) => (
+            <option key={folder.id} value={folder.id}>
+              {formatFolderLabel(folder.name, level)}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn-secondary"
+          onClick={() => onCreateFolder(currentFolderId)}
+        >
+          <span className="material-symbols-outlined">create_new_folder</span>
+          Nova pasta
+        </button>
+      </div>
+      {query.trim() === "" &&
+        folderFilter === "all" &&
+        childFolders.length > 0 && (
+          <div className="macro-folder-list">
+            {childFolders.map((folder) => (
+              <div
+                key={folder.id}
+                className="macro-folder-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setCurrentFolderId(folder.id);
+                  setSelected([]);
+                  setSelectedFolders([]);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setCurrentFolderId(folder.id);
+                    setSelected([]);
+                    setSelectedFolders([]);
+                  }
+                }}
+              >
+                <label
+                  className="macro-folder-checkbox"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFolders.includes(folder.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => toggleFolder(folder.id)}
+                    aria-label={`Selecionar pasta ${folder.name}`}
+                  />
+                  <span
+                    className="macro-folder-checkbox-mark"
+                    aria-hidden="true"
+                  />
+                </label>
+                <span className="macro-folder-name">
+                  <span className="material-symbols-outlined">folder</span>
+                  {folder.name}
+                </span>
+                <span className="macro-folder-count">
+                  {
+                    macros.filter((macro) => macro.folderId === folder.id)
+                      .length
+                  }{" "}
+                  snippet(s)
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       <div className="macro-list-grid">
         {filteredMacros.map((macro) => (
           <MacroCard

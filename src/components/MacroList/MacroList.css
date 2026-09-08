@@ -127,7 +127,8 @@
 .macro-folder-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 0.65rem;
   width: 100%;
   padding: 0.8rem 1rem;
   border: 0;
@@ -157,11 +158,39 @@
   font-weight: 600;
 }
 
+.macro-folder-checkbox {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.macro-folder-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.macro-folder-checkbox-mark {
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 0.2rem;
+  background: var(--color-bg-primary);
+}
+
+.macro-folder-checkbox input:checked + .macro-folder-checkbox-mark {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: inset 0 0 0 3px var(--color-bg-primary);
+}
+
 .macro-folder-name .material-symbols-outlined {
   color: var(--color-primary);
 }
 
 .macro-folder-count {
+  margin-left: auto;
   color: var(--color-text-tertiary);
   font-size: 0.8rem;
 }

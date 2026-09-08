@@ -25,6 +25,7 @@ function App() {
     renameFolder,
     moveFolder,
     deleteFolder,
+    deleteFolders,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>();
 
@@ -108,6 +109,7 @@ function App() {
             onRenameFolder={renameFolder}
             onMoveFolder={moveFolder}
             onDeleteFolder={deleteFolder}
+            onDeleteFolders={deleteFolders}
             onExportFolder={handleExportFolder}
           />
           <ImportExport
