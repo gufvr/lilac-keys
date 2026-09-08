@@ -7,7 +7,7 @@ import "./MacroList.css";
 interface MacroListProps {
   macros: Macro[];
   folders: Folder[];
-  onCreateMacro: () => void;
+  onCreateMacro: (folderId?: string) => void;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
   onExport: (ids: string[], format: "json" | "txt") => void;
@@ -159,7 +159,10 @@ export function MacroList({
           Comece criando sua primeira macro ou pasta.
         </p>
         <div className="macro-list-empty-actions">
-          <button className="btn btn-primary" onClick={onCreateMacro}>
+          <button
+            className="btn btn-primary"
+            onClick={() => onCreateMacro(currentFolderId)}
+          >
             <span className="material-symbols-outlined">add</span>
             Nova Macro
           </button>
@@ -338,7 +341,10 @@ export function MacroList({
             <span className="material-symbols-outlined">list</span>
             Macros ({macros.length})
           </h2>
-          <button className="btn btn-primary" onClick={onCreateMacro}>
+          <button
+            className="btn btn-primary"
+            onClick={() => onCreateMacro(currentFolderId)}
+          >
             <span className="material-symbols-outlined">add</span>
             Nova Macro
           </button>

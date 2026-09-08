@@ -44,12 +44,13 @@ function App() {
     setEditingMacro(macro);
   };
 
-  const handleCreateMacro = () => {
+  const handleCreateMacro = (folderId?: string) => {
     setEditingMacro({
       id: "",
       nome: "",
       atalho: "",
       textoExpandido: "",
+      folderId,
     });
   };
 
@@ -116,7 +117,7 @@ function App() {
           />
           {editingMacro !== undefined && (
             <MacroForm
-              macro={editingMacro.id ? editingMacro : undefined}
+              macro={editingMacro}
               onSubmit={handleFormSubmit}
               onCancel={handleFormCancel}
               onSuccess={handleFormCancel}
