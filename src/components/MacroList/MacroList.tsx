@@ -1,4 +1,10 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
@@ -33,6 +39,21 @@ interface MacroListProps {
   onExportFolder: (id: string, format: "json" | "txt") => void;
 }
 
+type FolderDropPlacement = "inside" | "above" | "below";
+
+interface FolderDragState {
+  folder: Folder;
+  pointerId: number;
+  x: number;
+  y: number;
+  dragging: boolean;
+}
+
+interface FolderDropTarget {
+  folderId: string;
+  placement: FolderDropPlacement;
+}
+
 export function MacroList({
   macros,
   folders,
@@ -59,7 +80,12 @@ export function MacroList({
     string | undefined
   >();
   const [folderToMove, setFolderToMove] = useState<Folder | undefined>();
+  const [folderDrag, setFolderDrag] = useState<FolderDragState>();
+  const [folderDropTarget, setFolderDropTarget] =
+    useState<FolderDropTarget>();
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const suppressFolderClickRef = useRef(false);
 
   useEffect(() => {
     if (
@@ -82,6 +108,112 @@ export function MacroList({
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [openFolderMenuId]);
+
+  useEffect(() => {
+    if (!folderDrag) return;
+
+    const updateDropTarget = (x: number, y: number) => {
+      const element = document.elementFromPoint(x, y);
+      const row = element?.closest<HTMLElement>("[data-folder-row-id]");
+      const targetId = row?.dataset.folderRowId;
+      if (!targetId || targetId === folderDrag.folder.id) {
+        setFolderDropTarget(undefined);
+        return;
+      }
+
+      const targetFolder = folders.find((folder) => folder.id === targetId);
+      if (
+        !targetFolder ||
+        isDescendantOf(targetId, folderDrag.folder.id)
+      ) {
+        setFolderDropTarget(undefined);
+        return;
+      }
+
+      const bounds = row.getBoundingClientRect();
+      const relativeY = y - bounds.top;
+      const edgeZone = bounds.height * 0.28;
+      const placement: FolderDropPlacement =
+        relativeY < edgeZone
+          ? "above"
+          : relativeY > bounds.height - edgeZone
+            ? "below"
+            : "inside";
+      setFolderDropTarget({
+        folderId: targetId,
+        placement,
+      });
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== folderDrag.pointerId) return;
+      const distance = Math.hypot(
+        event.clientX - dragStartRef.current.x,
+        event.clientY - dragStartRef.current.y,
+      );
+      const dragging = folderDrag.dragging || distance >= 6;
+
+      if (dragging) {
+        suppressFolderClickRef.current = true;
+        const edge = 72;
+        const speed = 12;
+        if (event.clientY < edge) window.scrollBy(0, -speed);
+        else if (event.clientY > window.innerHeight - edge)
+          window.scrollBy(0, speed);
+        updateDropTarget(event.clientX, event.clientY);
+      }
+
+      setFolderDrag((current) =>
+        current && current.pointerId === event.pointerId
+          ? { ...current, x: event.clientX, y: event.clientY, dragging }
+          : current,
+      );
+    };
+
+    const finishDrag = (event: PointerEvent) => {
+      if (event.pointerId !== folderDrag.pointerId) return;
+      if (folderDrag.dragging && folderDropTarget) {
+        const targetFolder = folders.find(
+          (folder) => folder.id === folderDropTarget.folderId,
+        );
+        if (targetFolder) {
+          moveFolder(
+            folderDrag.folder,
+            folderDropTarget.placement === "inside"
+              ? targetFolder.id
+              : targetFolder.parentId,
+            folderDropTarget.placement,
+            folderDropTarget.placement === "inside"
+              ? undefined
+              : targetFolder.id,
+          );
+        }
+      }
+      setFolderDrag(undefined);
+      setFolderDropTarget(undefined);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    const autoScroll =
+      folderDrag.dragging &&
+      window.setInterval(() => {
+        const edge = 72;
+        const speed = 12;
+        if (folderDrag.y < edge) window.scrollBy(0, -speed);
+        else if (folderDrag.y > window.innerHeight - edge)
+          window.scrollBy(0, speed);
+        if (folderDrag.dragging)
+          updateDropTarget(folderDrag.x, folderDrag.y);
+      }, 40);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      if (autoScroll) window.clearInterval(autoScroll);
+    };
+  }, [folderDrag, folderDropTarget, folders]);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const folderTree = useMemo(() => flattenFolders(folders), [folders]);
   const childFolders = useMemo(
@@ -350,46 +482,6 @@ export function MacroList({
                       </span>
                       Mover pasta
                     </button>
-                    {folders
-                      .filter(
-                        (item) =>
-                          item.parentId === folder.parentId &&
-                          item.id !== folder.id,
-                      )
-                      .map((item) => (
-                        <Fragment key={item.id}>
-                          <button
-                            type="button"
-                            className="macro-folder-menu-action"
-                            role="menuitem"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              moveFolder(folder, item.parentId, "above", item.id);
-                              setOpenFolderMenuId(undefined);
-                            }}
-                          >
-                            <span className="material-symbols-outlined">
-                              vertical_align_top
-                            </span>
-                            Acima de {item.name}
-                          </button>
-                          <button
-                            type="button"
-                            className="macro-folder-menu-action"
-                            role="menuitem"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              moveFolder(folder, item.parentId, "below", item.id);
-                              setOpenFolderMenuId(undefined);
-                            }}
-                          >
-                            <span className="material-symbols-outlined">
-                              vertical_align_bottom
-                            </span>
-                            Abaixo de {item.name}
-                          </button>
-                        </Fragment>
-                      ))}
                     <button
                       type="button"
                       className="macro-folder-menu-action"
@@ -566,31 +658,59 @@ export function MacroList({
       {query.trim() === "" &&
         folderFilter === "all" &&
         childFolders.length > 0 && (
-          <div className="macro-folder-list">
+          <>
+            {folderDrag?.dragging && (
+              <div
+                className={`macro-folder-drag-ghost${
+                  folderDropTarget ? " macro-folder-drag-ghost-targeted" : ""
+                }`}
+                style={{
+                  left: folderDrag.x,
+                  top: folderDrag.y,
+                  transform: `translate(-50%, -50%) scale(${folderDropTarget ? 0.72 : 0.88})`,
+                }}
+                aria-hidden="true"
+              >
+                <span className="material-symbols-outlined">folder</span>
+              </div>
+            )}
+            <div className="macro-folder-list">
             {childFolders.map((folder) => (
               <div
                 key={folder.id}
-                className="macro-folder-row"
-                draggable
+                className={`macro-folder-row${
+                  folderDrag?.folder.id === folder.id && folderDrag.dragging
+                    ? " macro-folder-row-dragging"
+                    : ""
+                }${
+                  folderDropTarget?.folderId === folder.id
+                    ? ` macro-folder-row-drop-target macro-folder-row-drop-${folderDropTarget.placement}`
+                    : ""
+                }`}
+                data-folder-row-id={folder.id}
                 role="button"
                 tabIndex={0}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData("text/folder-id", folder.id);
-                  event.dataTransfer.effectAllowed = "move";
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const draggedId = event.dataTransfer.getData("text/folder-id");
-                  const draggedFolder = folders.find((item) => item.id === draggedId);
-                  if (draggedFolder && draggedFolder.id !== folder.id) {
-                    moveFolder(draggedFolder, folder.id);
-                  }
+                onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => {
+                  if (event.button !== 0) return;
+                  dragStartRef.current = {
+                    x: event.clientX,
+                    y: event.clientY,
+                  };
+                  suppressFolderClickRef.current = false;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setFolderDrag({
+                    folder,
+                    pointerId: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                    dragging: false,
+                  });
                 }}
                 onClick={() => {
+                  if (suppressFolderClickRef.current) {
+                    suppressFolderClickRef.current = false;
+                    return;
+                  }
                   setCurrentFolderId(folder.id);
                   setSelected([]);
                   setSelectedFolders([]);
@@ -607,6 +727,7 @@ export function MacroList({
                 <label
                   className="macro-folder-checkbox"
                   onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
                 >
                   <input
                     type="checkbox"
@@ -633,7 +754,8 @@ export function MacroList({
                 </span>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       <div className="macro-list-grid">
         {filteredMacros.map((macro) => (

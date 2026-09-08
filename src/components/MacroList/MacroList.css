@@ -125,6 +125,7 @@
 }
 
 .macro-folder-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -139,7 +140,10 @@
   text-align: left;
   transition:
     background-color 0.2s ease,
-    padding-left 0.2s ease;
+    padding-left 0.2s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  touch-action: none;
 }
 
 .macro-folder-row:last-child {
@@ -149,6 +153,70 @@
 .macro-folder-row:hover {
   background: var(--color-bg-tertiary);
   padding-left: 1.25rem;
+}
+
+.macro-folder-row-dragging {
+  opacity: 0.28;
+}
+
+.macro-folder-row-drop-target .macro-folder-name .material-symbols-outlined {
+  transform: scale(0.68);
+  transition: transform 0.16s ease;
+}
+
+.macro-folder-row-drop-inside {
+  background: color-mix(
+    in srgb,
+    var(--color-primary) 12%,
+    var(--color-bg-secondary)
+  );
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.macro-folder-row-drop-above::before,
+.macro-folder-row-drop-below::after {
+  position: absolute;
+  right: 0.65rem;
+  left: 0.65rem;
+  height: 0.18rem;
+  border-radius: 1rem;
+  background: var(--color-primary);
+  box-shadow: 0 0 0.55rem color-mix(in srgb, var(--color-primary) 65%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.macro-folder-row-drop-above::before {
+  top: -0.1rem;
+}
+
+.macro-folder-row-drop-below::after {
+  bottom: -0.1rem;
+}
+
+.macro-folder-drag-ghost {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 0.55rem;
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-primary);
+  pointer-events: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.macro-folder-drag-ghost .material-symbols-outlined {
+  font-size: 1.65rem;
+}
+
+.macro-folder-drag-ghost-targeted {
+  box-shadow: 0 0 0.9rem color-mix(in srgb, var(--color-primary) 55%, transparent);
 }
 
 .macro-folder-name {
