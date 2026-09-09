@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import manifest from "../manifest.json";
 import { useMacros } from "./hooks/useMacros";
 import { Macro } from "./types/macro";
@@ -30,6 +30,13 @@ function App() {
     deleteFolders,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>();
+  const [query, setQuery] = useState("");
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
+
+  const handleGoHome = useCallback(() => {
+    setCurrentFolderId(undefined);
+    setQuery("");
+  }, []);
 
   const handleFormSubmit = (data: Omit<Macro, "id">) => {
     if (editingMacro?.id) {
@@ -94,13 +101,18 @@ function App() {
 
   return (
     <div className="app">
-      <Header />
+      <Header onHome={handleGoHome} />
       <main className="app-main">
         <div className="container">
           <Help />
           <MacroList
             macros={macros}
             folders={folders}
+            query={query}
+            currentFolderId={currentFolderId}
+            onQueryChange={setQuery}
+            onFolderChange={setCurrentFolderId}
+            onGoHome={handleGoHome}
             onCreateMacro={handleCreateMacro}
             onEdit={handleEdit}
             onDelete={handleDelete}

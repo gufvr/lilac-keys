@@ -1,17 +1,21 @@
 import { useTheme } from '../../hooks/useTheme'
 import './Header.css'
 
-export function Header() {
+interface HeaderProps {
+  onHome: () => void
+}
+
+export function Header({ onHome }: HeaderProps) {
   const { theme, toggleTheme } = useTheme()
 
   return (
     <header className='header'>
       <div className='container'>
         <div className='header-content'>
-          <h1 className='header-title'>
+          <button className='header-title' onClick={onHome} type='button' aria-label='Ir para a raiz das macros'>
             <span className='material-symbols-outlined'>local_florist</span>{' '}
             LilacKeys
-          </h1>
+          </button>
           <button
             className='btn btn-secondary theme-toggle'
             onClick={toggleTheme}

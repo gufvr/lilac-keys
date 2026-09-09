@@ -15,12 +15,16 @@
 }
 
 .header-title {
+  border: 0;
+  background: transparent;
   font-size: 1.5rem;
   font-weight: 600;
   color: var(--color-primary);
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  cursor: pointer;
+  padding: 0;
 }
 
 .header-title .material-symbols-outlined {

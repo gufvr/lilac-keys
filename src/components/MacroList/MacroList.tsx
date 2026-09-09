@@ -13,6 +13,11 @@ import "./MacroList.css";
 interface MacroListProps {
   macros: Macro[];
   folders: Folder[];
+  query: string;
+  currentFolderId?: string;
+  onQueryChange: (query: string) => void;
+  onFolderChange: (folderId?: string) => void;
+  onGoHome: () => void;
   onCreateMacro: (folderId?: string) => void;
   onEdit: (macro: Macro) => void;
   onDelete: (id: string) => void;
@@ -57,6 +62,11 @@ interface FolderDropTarget {
 export function MacroList({
   macros,
   folders,
+  query,
+  currentFolderId,
+  onQueryChange,
+  onFolderChange,
+  onGoHome,
   onCreateMacro,
   onEdit,
   onDelete,
@@ -71,11 +81,14 @@ export function MacroList({
   onDeleteFolders,
   onExportFolder,
 }: MacroListProps) {
-  const [query, setQuery] = useState("");
   const [folderFilter, setFolderFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
+  const [isMacroMoveModalOpen, setIsMacroMoveModalOpen] = useState(false);
+  const [isFolderMoveModalOpen, setIsFolderMoveModalOpen] = useState(false);
+  const [expandedMoveFolders, setExpandedMoveFolders] = useState<Set<string>>(
+    new Set(),
+  );
   const [openFolderMenuId, setOpenFolderMenuId] = useState<
     string | undefined
   >();
@@ -92,9 +105,9 @@ export function MacroList({
       currentFolderId &&
       !folders.some((folder) => folder.id === currentFolderId)
     ) {
-      setCurrentFolderId(undefined);
+      onGoHome();
     }
-  }, [currentFolderId, folders]);
+  }, [currentFolderId, folders, onGoHome]);
 
   useEffect(() => {
     if (!openFolderMenuId) return;
@@ -303,7 +316,7 @@ export function MacroList({
     ) {
       onDeleteFolder(folder.id);
       if (folderPath.some((item) => item.id === folder.id)) {
-        setCurrentFolderId(folder.parentId);
+        onFolderChange(folder.parentId);
       }
     }
   };
@@ -320,7 +333,23 @@ export function MacroList({
   const moveSelectedFolders = (parentId?: string) => {
     const result = onMoveFolders(selectedFolders, parentId);
     if (!result.success) window.alert(result.error);
-    else setSelectedFolders([]);
+    else {
+      setSelectedFolders([]);
+      setIsFolderMoveModalOpen(false);
+    }
+  };
+  const moveSelectedMacros = (folderId?: string) => {
+    onMoveSelected(selected, folderId);
+    setSelected([]);
+    setIsMacroMoveModalOpen(false);
+  };
+  const toggleMoveFolder = (folderId: string) => {
+    setExpandedMoveFolders((ids) => {
+      const next = new Set(ids);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
   };
   const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
     let folder = folders.find((item) => item.id === folderId);
@@ -364,15 +393,15 @@ export function MacroList({
         <div ref={breadcrumbsRef} className="macro-list-breadcrumbs">
           <button
             className="btn-icon"
-            onClick={() => setCurrentFolderId(undefined)}
-            disabled={!currentFolderId}
+            onClick={onGoHome}
+            disabled={!currentFolderId && !query}
             title="Ir para a raiz"
           >
             <span className="material-symbols-outlined">home</span>
           </button>
           <button
             className="macro-list-breadcrumb"
-            onClick={() => setCurrentFolderId(undefined)}
+            onClick={onGoHome}
           >
             Snippets
           </button>
@@ -393,7 +422,7 @@ export function MacroList({
                 <button
                   type="button"
                   className="macro-list-breadcrumb"
-                  onClick={() => setCurrentFolderId(folder.id)}
+                  onClick={() => onFolderChange(folder.id)}
                   aria-current={isCurrentFolder ? "page" : undefined}
                   aria-label={`Ir para ${folder.name}`}
                 >
@@ -410,7 +439,7 @@ export function MacroList({
                   <button
                     type="button"
                     className="macro-folder-preview"
-                    onClick={() => setCurrentFolderId(folder.id)}
+                    onClick={() => onFolderChange(folder.id)}
                     aria-label={`Navegar para ${folder.name}`}
                   >
                     {folder.name}
@@ -550,35 +579,15 @@ export function MacroList({
               : "Selecionar todas as pastas"}
           </button>
         )}
-        <select
-          className="input"
+        <button
+          type="button"
+          className="btn btn-secondary"
           disabled={!selectedFolders.length}
-          defaultValue=""
-          aria-label="Mover pastas selecionadas para"
-          onChange={(event) => {
-            if (event.target.value !== "") {
-              moveSelectedFolders(
-                event.target.value === "root" ? undefined : event.target.value,
-              );
-            }
-            event.target.value = "";
-          }}
+          onClick={() => setIsFolderMoveModalOpen(true)}
         >
-          <option value="">Mover pastas para...</option>
-          <option value="root">Raiz</option>
-          <optgroup label="Pastas">
-            {folderTree.map(({ folder, level }) => (
-              <option
-                key={folder.id}
-                value={folder.id}
-                disabled={selectedFolders.includes(folder.id)}
-              >
-                {formatFolderLabel(folder.name, level)}
-                {selectedFolders.includes(folder.id) ? " (selecionada)" : ""}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+          <span className="material-symbols-outlined">drive_file_move</span>
+          Mover pastas para...
+        </button>
         <button className="btn btn-secondary" onClick={selectAll}>
           {selected.length === filteredMacros.length
             ? "Desmarcar todos"
@@ -601,24 +610,15 @@ export function MacroList({
           <span className="material-symbols-outlined">download</span>
           Exportar TXT
         </button>
-        <select
-          className="input"
+        <button
+          type="button"
+          className="btn btn-secondary"
           disabled={!selected.length}
-          defaultValue=""
-          onChange={(e) => {
-            onMoveSelected(selected, e.target.value || undefined);
-            setSelected([]);
-            e.target.value = "";
-          }}
+          onClick={() => setIsMacroMoveModalOpen(true)}
         >
-          <option value="">Mover para...</option>
-          <option value="">Sem pasta</option>
-          {folderTree.map(({ folder, level }) => (
-            <option key={folder.id} value={folder.id}>
-              {formatFolderLabel(folder.name, level)}
-            </option>
-          ))}
-        </select>
+          <span className="material-symbols-outlined">drive_file_move</span>
+          Mover para...
+        </button>
         <button
           className="btn btn-danger"
           disabled={!selected.length}
@@ -631,7 +631,7 @@ export function MacroList({
         <input
           className="input"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Pesquisar nome, atalho ou texto..."
         />
         <select
@@ -711,14 +711,14 @@ export function MacroList({
                     suppressFolderClickRef.current = false;
                     return;
                   }
-                  setCurrentFolderId(folder.id);
+                  onFolderChange(folder.id);
                   setSelected([]);
                   setSelectedFolders([]);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setCurrentFolderId(folder.id);
+                    onFolderChange(folder.id);
                     setSelected([]);
                     setSelectedFolders([]);
                   }
@@ -810,23 +810,240 @@ export function MacroList({
                 <span className="material-symbols-outlined">home</span>
                 Raiz
               </button>
-              {folderTree
-                .filter(
-                  ({ folder }) =>
-                    folder.id !== folderToMove.id &&
-                    !isDescendantOf(folder.id, folderToMove.id),
-                )
-                .map(({ folder, level }) => (
-                  <button
+              {folderTree.map(({ folder, level }) => {
+                const hasChildren = folders.some(
+                  (item) => item.parentId === folder.id,
+                );
+                const isExpanded = expandedMoveFolders.has(folder.id);
+                let parentId = folder.parentId;
+                let isVisible = true;
+                while (parentId) {
+                  if (!expandedMoveFolders.has(parentId)) {
+                    isVisible = false;
+                    break;
+                  }
+                  parentId = folders.find(
+                    (item) => item.id === parentId,
+                  )?.parentId;
+                }
+                if (!isVisible) return null;
+
+                const isInvalidDestination =
+                  folder.id === folderToMove.id ||
+                  isDescendantOf(folder.id, folderToMove.id);
+
+                return (
+                  <div
                     key={folder.id}
-                    type="button"
-                    className="macro-folder-destination"
-                    onClick={() => moveFolder(folderToMove, folder.id)}
+                    className="macro-folder-destination-row"
+                    style={{ paddingLeft: `${0.25 + level * 1.25}rem` }}
                   >
-                    <span className="material-symbols-outlined">folder</span>
-                    {formatFolderLabel(folder.name, level)}
-                  </button>
-                ))}
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        className="macro-folder-destination-toggle"
+                        aria-label={`${isExpanded ? "Recolher" : "Expandir"} ${folder.name}`}
+                        onClick={() => toggleMoveFolder(folder.id)}
+                      >
+                        <span className="material-symbols-outlined">
+                          {isExpanded ? "expand_more" : "chevron_right"}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="macro-folder-destination-toggle-placeholder" />
+                    )}
+                    <button
+                      type="button"
+                      className="macro-folder-destination"
+                      disabled={isInvalidDestination}
+                      onClick={() => moveFolder(folderToMove, folder.id)}
+                    >
+                      <span className="material-symbols-outlined">folder</span>
+                      {folder.name}
+                      {isInvalidDestination && " (selecionada)"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {isMacroMoveModalOpen && (
+        <div
+          className="macro-folder-move-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="macro-destination-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget)
+              setIsMacroMoveModalOpen(false);
+          }}
+        >
+          <div className="macro-folder-move-dialog">
+            <div className="macro-folder-move-header">
+              <h3 id="macro-destination-title">Mover macros</h3>
+              <button
+                type="button"
+                className="btn-icon"
+                aria-label="Fechar seleção de destino"
+                onClick={() => setIsMacroMoveModalOpen(false)}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <p className="macro-folder-move-description">
+              Selecione onde deseja colocar {selected.length === 1 ? "a macro selecionada" : `as ${selected.length} macros selecionadas`}.
+            </p>
+            <div className="macro-folder-destination-list">
+              <button
+                type="button"
+                className="macro-folder-destination"
+                onClick={() => moveSelectedMacros()}
+              >
+                <span className="material-symbols-outlined">home</span>
+                Raiz
+              </button>
+              {folderTree.map(({ folder }) => {
+                const hasChildren = folders.some(
+                  (item) => item.parentId === folder.id,
+                );
+                const isExpanded = expandedMoveFolders.has(folder.id);
+                let parentId = folder.parentId;
+                let isVisible = true;
+                while (parentId) {
+                  if (!expandedMoveFolders.has(parentId)) {
+                    isVisible = false;
+                    break;
+                  }
+                  parentId = folders.find((item) => item.id === parentId)?.parentId;
+                }
+                if (!isVisible) return null;
+
+                return (
+                  <div
+                    key={folder.id}
+                    className="macro-folder-destination-row"
+                    style={{ paddingLeft: `${0.25 + (folderTree.find((item) => item.folder.id === folder.id)?.level ?? 0) * 1.25}rem` }}
+                  >
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        className="macro-folder-destination-toggle"
+                        aria-label={`${isExpanded ? "Recolher" : "Expandir"} ${folder.name}`}
+                        onClick={() => toggleMoveFolder(folder.id)}
+                      >
+                        <span className="material-symbols-outlined">
+                          {isExpanded ? "expand_more" : "chevron_right"}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="macro-folder-destination-toggle-placeholder" />
+                    )}
+                    <button
+                      type="button"
+                      className="macro-folder-destination"
+                      onClick={() => moveSelectedMacros(folder.id)}
+                    >
+                      <span className="material-symbols-outlined">folder</span>
+                      {folder.name}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {isFolderMoveModalOpen && (
+        <div
+          className="macro-folder-move-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="folder-destination-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget)
+              setIsFolderMoveModalOpen(false);
+          }}
+        >
+          <div className="macro-folder-move-dialog">
+            <div className="macro-folder-move-header">
+              <h3 id="folder-destination-title">Mover pastas</h3>
+              <button
+                type="button"
+                className="btn-icon"
+                aria-label="Fechar seleção de destino"
+                onClick={() => setIsFolderMoveModalOpen(false)}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <p className="macro-folder-move-description">
+              Selecione onde deseja colocar {selectedFolders.length === 1 ? "a pasta selecionada" : `as ${selectedFolders.length} pastas selecionadas`}.
+            </p>
+            <div className="macro-folder-destination-list">
+              <button
+                type="button"
+                className="macro-folder-destination"
+                onClick={() => moveSelectedFolders()}
+              >
+                <span className="material-symbols-outlined">home</span>
+                Raiz
+              </button>
+              {folderTree.map(({ folder }) => {
+                const hasChildren = folders.some(
+                  (item) => item.parentId === folder.id,
+                );
+                const isExpanded = expandedMoveFolders.has(folder.id);
+                let parentId = folder.parentId;
+                let isVisible = true;
+                while (parentId) {
+                  if (!expandedMoveFolders.has(parentId)) {
+                    isVisible = false;
+                    break;
+                  }
+                  parentId = folders.find((item) => item.id === parentId)?.parentId;
+                }
+                if (!isVisible) return null;
+                const isInvalidDestination = selectedFolders.some(
+                  (selectedFolderId) =>
+                    selectedFolderId === folder.id ||
+                    isDescendantOf(folder.id, selectedFolderId),
+                );
+
+                return (
+                  <div
+                    key={folder.id}
+                    className="macro-folder-destination-row"
+                    style={{ paddingLeft: `${0.25 + (folderTree.find((item) => item.folder.id === folder.id)?.level ?? 0) * 1.25}rem` }}
+                  >
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        className="macro-folder-destination-toggle"
+                        aria-label={`${isExpanded ? "Recolher" : "Expandir"} ${folder.name}`}
+                        onClick={() => toggleMoveFolder(folder.id)}
+                      >
+                        <span className="material-symbols-outlined">
+                          {isExpanded ? "expand_more" : "chevron_right"}
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="macro-folder-destination-toggle-placeholder" />
+                    )}
+                    <button
+                      type="button"
+                      className="macro-folder-destination"
+                      disabled={isInvalidDestination}
+                      onClick={() => moveSelectedFolders(folder.id)}
+                    >
+                      <span className="material-symbols-outlined">folder</span>
+                      {folder.name}
+                      {isInvalidDestination && " (selecionada)"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

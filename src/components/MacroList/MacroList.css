@@ -395,11 +395,50 @@
   text-align: left;
 }
 
+.macro-folder-destination-row {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.macro-folder-destination-row .macro-folder-destination {
+  flex: 1;
+}
+
+.macro-folder-destination-toggle,
+.macro-folder-destination-toggle-placeholder {
+  display: grid;
+  flex: 0 0 1.5rem;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.macro-folder-destination-toggle {
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.macro-folder-destination-toggle:hover,
+.macro-folder-destination-toggle:focus-visible {
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+}
+
 .macro-folder-destination:hover,
 .macro-folder-destination:focus-visible {
   border-color: var(--color-border-hover);
   background: var(--color-bg-tertiary);
   color: var(--color-primary);
+}
+
+.macro-folder-destination:disabled {
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .macro-list-toolbar,
