@@ -1,8 +1,10 @@
-# LilacKeys
+<p align="center">
+  <img src="public/LilacKeys_logo.png" alt="LilacKeys logo" width="120" />
+</p>
 
-A browser extension for creating, organizing, and expanding frequently used text.
+<h1 align="center">LilacKeys</h1>
 
-[Install LilacKeys from the Chrome Web Store](https://chromewebstore.google.com/detail/lilackeys/edbejkgpcffchpocpopbkiiihinbjdol)
+<p align="center">A browser extension for creating, organizing, searching, and expanding text snippets.</p>
 
 ## Features
 
