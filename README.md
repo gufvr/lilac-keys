@@ -1,117 +1,60 @@
-<p align="center">
-  <img src="public/LilacKeys_logo.png" alt="LilacKeys logo" width="120" />
-</p>
+# LilacKeys
 
-<h1 align="center">LilacKeys</h1>
+A browser extension for creating, organizing, and expanding frequently used text.
 
-<p align="center">A browser extension for creating, organizing, searching, and expanding text snippets.</p>
-
-## Overview
-
-LilacKeys keeps frequently used text close at hand. Create a shortcut once, organize snippets into nested folders, and expand saved content in supported text fields with `Shift + Space`.
-
-It is a Manifest V3 browser extension with a React management interface and a lightweight content script for expansion.
+[Install LilacKeys from the Chrome Web Store](https://chromewebstore.google.com/detail/lilackeys/edbejkgpcffchpocpopbkiiihinbjdol)
 
 ## Features
 
-- Create, edit, delete, and search text macros.
-- Expand snippets in inputs, textareas, and content-editable fields.
-- Organize snippets into folders and nested subfolders.
-- Create, rename, export, and delete folders from the folder browser.
-- Search by macro name, shortcut, or expanded text.
-- Use `%PLACEHOLDER%` markers for editable fields and navigate between them with `Tab`.
-- Select snippets individually or select all filtered results.
-- Move or delete multiple snippets at once.
-- Import and export JSON and TXT files.
-- Import and export folder-based JSON structures.
-- Persist macros and folders in `chrome.storage.local`.
-- Use `unlimitedStorage` to avoid the default extension storage quota.
+- Create macros with a name, shortcut, and expanded text.
+- Expand macros in text fields, textareas, and compatible editors.
+- Press `Shift + Space` to expand a macro.
+- Organize macros into folders and subfolders.
+- Search by macro name, shortcut, or content.
+- Use markers such as `%NAME%` for editable parts of a text.
+- Import and export macros in JSON or TXT format.
+- Export complete folders, including subfolders and macros.
 - Switch between light and dark themes.
 
-## Usage
+## Getting started
 
-1. Open the LilacKeys extension page.
-2. Create a macro with a name, shortcut, expanded text, and optional folder.
-3. Type the shortcut in a supported text field.
-4. Press `Shift + Space` to expand the matching snippet.
-5. Browse folders or search by name, shortcut, or content.
+1. [Install LilacKeys from the Chrome Web Store](https://chromewebstore.google.com/detail/lilackeys/edbejkgpcffchpocpopbkiiihinbjdol).
+2. Open LilacKeys from your browser's extensions menu.
+3. Click **New Macro**.
+4. Enter a name, shortcut, and expanded text.
+5. Optionally, choose a folder for the macro.
+6. Type the shortcut in a compatible text field and press `Shift + Space`.
 
-Search is global while a query is active. Without a query, the folder browser shows the current level and its snippets.
+## Placeholders
 
-## Folder Export Format
-
-Exports use folder arrays containing the folder name, creation timestamp, and snippets:
-
-```json
-[
-  [
-    "Stack",
-    1768177038544,
-    {
-      "name": "JS",
-      "body": "JavaScript",
-      "timestamp": 1768177065086
-    }
-  ]
-]
-```
-
-Exporting a folder includes its nested folders and snippets.
-
-## Tech Stack
-
-- React 18
-- TypeScript
-- Vite
-- Chrome Extension Manifest V3
-- Chrome Storage API
-- Material Symbols
-
-## Project Structure
+Use percent signs to create editable sections, for example:
 
 ```text
-src/
-├── background/             Extension service worker
-├── components/             React UI components
-│   ├── Header/
-│   ├── Help/
-│   ├── ImportExport/
-│   ├── MacroCard/
-│   ├── MacroForm/
-│   └── MacroList/
-├── content/                Text expansion content script
-├── hooks/                  React state and theme hooks
-├── services/               Storage and theme services
-├── types/                  Shared TypeScript types
-├── utils/                  Validation and import/export helpers
-├── App.tsx
-└── main.tsx
+Hello, %NAME%! Your request has been received.
 ```
 
-## Getting Started
+When the text is expanded, the first placeholder is selected. Press `Tab` to move between placeholders.
 
-```bash
-npm install
-npm run dev
-npm run lint
-npm run build
-```
+## Folders
 
-The production extension is generated in `dist/`.
+Use folders to organize macros by topic, project, or workflow. You can create subfolders, move macros, rename folders, and export folder contents.
 
-## Load the Extension in a Chromium Browser
+## Backup and restore
 
-1. Run `npm run build`.
-2. Open the browser's extensions page.
-3. Enable Developer mode.
-4. Choose **Load unpacked**.
-5. Select the generated `dist/` folder.
-6. Reload the extension and the target page after rebuilding.
+Use **Export** to save your macros as JSON or TXT. To restore or transfer your data, use **Import** and select the saved file.
 
-## Storage Notes
+JSON is recommended for backups because it preserves folder organization. When importing macros with duplicate names, LilacKeys creates a variation of the name instead of overwriting existing data.
 
-LilacKeys stores data locally in the browser extension profile. `unlimitedStorage` removes the standard quota for `chrome.storage.local`, but storage still depends on available disk space and browser policies. Data is not synchronized between browsers or devices.
+## Privacy
+
+Macros and theme preferences are stored locally in your browser profile. LilacKeys does not synchronize this data with external servers.
+
+The extension needs access to text fields on web pages to detect shortcuts and expand macros. It does not send the content of those fields outside your browser.
+
+## Compatibility
+
+LilacKeys works with Chromium-based browsers that support Manifest V3, including Google Chrome and Microsoft Edge.
 
 ## License
 
-This project is under the MIT license.
+This project is licensed under the MIT License.
