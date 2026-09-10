@@ -65,6 +65,64 @@
   font-size: 0.75rem;
 }
 
+.macro-form-folder-picker {
+  position: relative;
+}
+
+.macro-form-folder-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+
+.macro-form-folder-picker-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: 0;
+  z-index: 3;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0.3rem;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 0.4rem;
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.macro-form-folder-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.macro-form-folder-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.macro-form-folder-picker-option:hover,
+.macro-form-folder-picker-option:focus-visible,
+.macro-form-folder-picker-option.is-selected {
+  border-color: var(--color-border-hover);
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+}
+
 .macro-form-actions {
   display: flex;
   gap: 0.75rem;

@@ -9,6 +9,8 @@ interface MacroCardProps {
   onExport?: (ids: string[], format: "json" | "txt") => void;
   selected?: boolean;
   onSelect?: (id: string) => void;
+  onDragStart?: (id: string) => void;
+  onDragEnd?: () => void;
 }
 
 export function MacroCard({
@@ -18,6 +20,8 @@ export function MacroCard({
   onExport,
   selected = false,
   onSelect,
+  onDragStart,
+  onDragEnd,
 }: MacroCardProps) {
   const [expanded, setExpanded] = useState(false);
   const handleDelete = () => {
@@ -31,6 +35,9 @@ export function MacroCard({
   return (
     <div
       className={`macro-card card${expanded ? " is-expanded" : ""}`}
+      draggable={Boolean(onDragStart)}
+      onDragStart={() => onDragStart?.(macro.id)}
+      onDragEnd={onDragEnd}
       onClick={() => setExpanded((value) => !value)}
     >
       <div className="macro-card-header">

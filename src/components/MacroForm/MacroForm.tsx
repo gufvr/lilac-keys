@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { Folder, Macro } from "../../types/macro";
+import { FolderTreePicker } from "../FolderTreePicker/FolderTreePicker";
 import { RichTextEditor } from "../RichTextEditor";
-import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import "./MacroForm.css";
 
 interface MacroFormProps {
@@ -19,7 +19,6 @@ export function MacroForm({
   onSuccess,
   folders = [],
 }: MacroFormProps) {
-  const folderTree = flattenFolders(folders);
   const [nome, setNome] = useState("");
   const [atalho, setAtalho] = useState("");
   const [textoExpandido, setTextoExpandido] = useState("");
@@ -99,19 +98,12 @@ export function MacroForm({
           <label htmlFor="folderId" className="macro-form-label">
             Pasta
           </label>
-          <select
+          <FolderTreePicker
             id="folderId"
-            className="input"
+            folders={folders}
             value={folderId}
-            onChange={(e) => setFolderId(e.target.value)}
-          >
-            <option value="">Sem pasta</option>
-            {folderTree.map(({ folder, level }) => (
-              <option key={folder.id} value={folder.id}>
-                {formatFolderLabel(folder.name, level)}
-              </option>
-            ))}
-          </select>
+            onChange={setFolderId}
+          />
         </div>
 
         <div className="macro-form-field">

@@ -48,6 +48,7 @@ type FolderDropPlacement = "inside" | "above" | "below";
 
 interface FolderDragState {
   folder: Folder;
+  folderIds: string[];
   pointerId: number;
   x: number;
   y: number;
@@ -96,6 +97,7 @@ export function MacroList({
   const [folderDrag, setFolderDrag] = useState<FolderDragState>();
   const [folderDropTarget, setFolderDropTarget] =
     useState<FolderDropTarget>();
+  const [macroDragIds, setMacroDragIds] = useState<string[]>([]);
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const suppressFolderClickRef = useRef(false);
@@ -129,16 +131,17 @@ export function MacroList({
       const element = document.elementFromPoint(x, y);
       const row = element?.closest<HTMLElement>("[data-folder-row-id]");
       const targetId = row?.dataset.folderRowId;
-      if (!targetId || targetId === folderDrag.folder.id) {
+      if (
+        !targetId ||
+        folderDrag.folderIds.includes(targetId) ||
+        folderDrag.folderIds.some((id) => isDescendantOf(targetId, id))
+      ) {
         setFolderDropTarget(undefined);
         return;
       }
 
       const targetFolder = folders.find((folder) => folder.id === targetId);
-      if (
-        !targetFolder ||
-        isDescendantOf(targetId, folderDrag.folder.id)
-      ) {
+      if (!targetFolder) {
         setFolderDropTarget(undefined);
         return;
       }
@@ -190,16 +193,27 @@ export function MacroList({
           (folder) => folder.id === folderDropTarget.folderId,
         );
         if (targetFolder) {
-          moveFolder(
-            folderDrag.folder,
-            folderDropTarget.placement === "inside"
-              ? targetFolder.id
-              : targetFolder.parentId,
-            folderDropTarget.placement,
-            folderDropTarget.placement === "inside"
-              ? undefined
-              : targetFolder.id,
-          );
+          if (folderDrag.folderIds.length > 1) {
+            const result = onMoveFolders(
+              folderDrag.folderIds,
+              folderDropTarget.placement === "inside"
+                ? targetFolder.id
+                : targetFolder.parentId,
+            );
+            if (result.success) setSelectedFolders([]);
+            else if (result.error) window.alert(result.error);
+          } else {
+            moveFolder(
+              folderDrag.folder,
+              folderDropTarget.placement === "inside"
+                ? targetFolder.id
+                : targetFolder.parentId,
+              folderDropTarget.placement,
+              folderDropTarget.placement === "inside"
+                ? undefined
+                : targetFolder.id,
+            );
+          }
         }
       }
       setFolderDrag(undefined);
@@ -700,6 +714,9 @@ export function MacroList({
                   event.currentTarget.setPointerCapture(event.pointerId);
                   setFolderDrag({
                     folder,
+                    folderIds: selectedFolders.includes(folder.id)
+                      ? selectedFolders
+                      : [folder.id],
                     pointerId: event.pointerId,
                     x: event.clientX,
                     y: event.clientY,
@@ -722,6 +739,27 @@ export function MacroList({
                     setSelected([]);
                     setSelectedFolders([]);
                   }
+                }}
+                onDragOver={(event) => {
+                  if (!macroDragIds.length) return;
+                  event.preventDefault();
+                  setFolderDropTarget({
+                    folderId: folder.id,
+                    placement: "inside",
+                  });
+                }}
+                onDragLeave={() => {
+                  if (macroDragIds.length) setFolderDropTarget(undefined);
+                }}
+                onDrop={(event) => {
+                  if (!macroDragIds.length) return;
+                  event.preventDefault();
+                  onMoveSelected(macroDragIds, folder.id);
+                  setSelected((ids) =>
+                    ids.filter((id) => !macroDragIds.includes(id)),
+                  );
+                  setMacroDragIds([]);
+                  setFolderDropTarget(undefined);
                 }}
               >
                 <label
@@ -767,6 +805,13 @@ export function MacroList({
             onExport={onExport}
             selected={selected.includes(macro.id)}
             onSelect={toggle}
+            onDragStart={(id) =>
+              setMacroDragIds(selected.includes(id) ? selected : [id])
+            }
+            onDragEnd={() => {
+              setMacroDragIds([]);
+              setFolderDropTarget(undefined);
+            }}
           />
         ))}
       </div>
