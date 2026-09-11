@@ -1,12 +1,14 @@
 import { Macro } from "../types/macro";
 
 const PLACEHOLDER_PATTERN = /%[^%\r\n]+%/g;
+let isExpandingMacro = false;
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Tab" && moveToNextPlaceholder(e)) return;
   if (e.key !== " " || !e.shiftKey || !isSupportedEditable(document.activeElement)) {
     return;
   }
+  if (isExpandingMacro) return;
 
   e.preventDefault();
   e.stopPropagation();
@@ -19,28 +21,35 @@ document.addEventListener("keydown", (e) => {
 async function handleKeydown(e: KeyboardEvent): Promise<void> {
   if (!(e.key === " " && e.shiftKey)) return;
 
-  const el = document.activeElement;
-  const isPlainTextField =
-    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
-  const isRichTextField = el instanceof HTMLElement && el.isContentEditable;
-
-  if (!isPlainTextField && !isRichTextField) {
-    return;
-  }
-
-  const plainTextElement = isPlainTextField ? el : null;
-  const richTextElement = isRichTextField ? el : null;
-
-  const start = plainTextElement?.selectionStart ?? 0;
-  const valueBeforeCursor = plainTextElement
-    ? plainTextElement.value.slice(0, start)
-    : getEditableTextBeforeCursor(richTextElement!);
+  if (isExpandingMacro) return;
+  isExpandingMacro = true;
   try {
+    const el = document.activeElement;
+    const isPlainTextField =
+      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+    const isRichTextField = el instanceof HTMLElement && el.isContentEditable;
+
+    if (!isPlainTextField && !isRichTextField) return;
+
+    const plainTextElement = isPlainTextField ? el : null;
+    const richTextElement = isRichTextField ? el : null;
     const macros = await loadMacros();
     if (!macros) {
-      insertSpace(plainTextElement, richTextElement, start);
+      insertSpace(
+        plainTextElement,
+        richTextElement,
+        plainTextElement?.selectionStart ?? 0,
+      );
       return;
     }
+    const maxShortcutLength = getMaxShortcutLength(macros);
+    const start = plainTextElement?.selectionStart ?? 0;
+    const valueBeforeCursor = plainTextElement
+      ? plainTextElement.value.slice(
+          Math.max(0, start - maxShortcutLength),
+          start,
+        )
+      : getEditableTextBeforeCursor(richTextElement!, maxShortcutLength);
     expandMacro(
       macros,
       plainTextElement,
@@ -50,6 +59,8 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
     );
   } catch (error) {
     console.error("LilacKeys: falha ao carregar macros", error);
+  } finally {
+    isExpandingMacro = false;
   }
 }
 
@@ -117,18 +128,18 @@ function expandMacro(
   valueBeforeCursor: string,
 ): void {
   const normalizedValueBeforeCursor = valueBeforeCursor.toLowerCase();
-  const matchingMacros = macros
-    .map((item) => ({
-      macro: item,
-      shortcut: item.atalho.trim().toLowerCase(),
-    }))
-    .filter(({ shortcut }) =>
-      shortcut.length > 0 && normalizedValueBeforeCursor.endsWith(shortcut),
-    )
-    .sort((first, second) => second.shortcut.length - first.shortcut.length);
-  const matchingMacro = matchingMacros[0];
-  const macro = matchingMacro?.macro;
-  const shortcutLength = matchingMacro?.shortcut.length ?? 0;
+  let macro: Macro | undefined;
+  let shortcutLength = 0;
+  for (const item of macros) {
+    const shortcut = item.atalho.trim().toLowerCase();
+    if (
+      shortcut.length > shortcutLength &&
+      normalizedValueBeforeCursor.endsWith(shortcut)
+    ) {
+      macro = item;
+      shortcutLength = shortcut.length;
+    }
+  }
 
   if (!macro) {
     insertSpace(plainTextElement, richTextElement, start);
@@ -138,25 +149,34 @@ function expandMacro(
   if (plainTextElement) {
     const expandedText = htmlToText(macro.textoExpandido);
     const replacementStart = start - shortcutLength;
-    plainTextElement.value =
-      plainTextElement.value.slice(0, replacementStart) +
-      expandedText +
-      plainTextElement.value.slice(start);
-    const cursor = replacementStart + expandedText.length;
-    plainTextElement.selectionStart = plainTextElement.selectionEnd = cursor;
+    plainTextElement.setRangeText(
+      expandedText,
+      replacementStart,
+      start,
+      "end",
+    );
     dispatchInputEvent(plainTextElement);
     selectNextInputPlaceholder(plainTextElement, replacementStart);
     return;
   }
 
-  selectCharactersBeforeCursor(shortcutLength);
-  document.execCommand("delete", false);
+  if (!selectCharactersBeforeCursor(shortcutLength)) return;
+  const expandedHtml = hasPlaceholders(macro.textoExpandido)
+    ? addPlaceholderMarkers(macro.textoExpandido)
+    : macro.textoExpandido;
   document.execCommand(
     "insertHTML",
     false,
-    addPlaceholderMarkers(macro.textoExpandido),
+    expandedHtml,
   );
   selectNextContentPlaceholder(richTextElement!);
+}
+
+function getMaxShortcutLength(macros: Macro[]): number {
+  return macros.reduce(
+    (maxLength, macro) => Math.max(maxLength, macro.atalho.trim().length),
+    0,
+  );
 }
 
 function moveToNextPlaceholder(event: KeyboardEvent): boolean {
@@ -213,7 +233,23 @@ function findPlaceholder(
 function dispatchInputEvent(
   element: HTMLInputElement | HTMLTextAreaElement,
 ): void {
-  element.dispatchEvent(new Event("input", { bubbles: true }));
+  try {
+    element.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+      }),
+    );
+  } catch {
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+function hasPlaceholders(html: string): boolean {
+  PLACEHOLDER_PATTERN.lastIndex = 0;
+  const result = PLACEHOLDER_PATTERN.test(html);
+  PLACEHOLDER_PATTERN.lastIndex = 0;
+  return result;
 }
 
 function addPlaceholderMarkers(html: string): string {
@@ -272,11 +308,8 @@ function insertSpace(
   start: number,
 ): void {
   if (plainTextElement) {
-    plainTextElement.value =
-      plainTextElement.value.slice(0, start) +
-      " " +
-      plainTextElement.value.slice(start);
-    plainTextElement.selectionStart = plainTextElement.selectionEnd = start + 1;
+    plainTextElement.setRangeText(" ", start, start, "end");
+    dispatchInputEvent(plainTextElement);
     return;
   }
 
@@ -289,9 +322,9 @@ function isExtensionContextInvalidated(error: unknown): boolean {
   return String(error).includes("Extension context invalidated");
 }
 
-function selectCharactersBeforeCursor(length: number): void {
+function selectCharactersBeforeCursor(length: number): boolean {
   const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return;
+  if (!selection || selection.rangeCount === 0) return false;
 
   const editableSelection = selection as Selection & {
     modify?: (
@@ -305,16 +338,71 @@ function selectCharactersBeforeCursor(length: number): void {
   for (let index = 0; index < length; index += 1) {
     editableSelection.modify?.("extend", "backward", "character");
   }
+  return true;
 }
 
-function getEditableTextBeforeCursor(element: HTMLElement): string {
+function getEditableTextBeforeCursor(
+  element: HTMLElement,
+  maxLength: number,
+): string {
   const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return element.innerText;
+  const anchorNode = selection?.anchorNode;
+  if (
+    !selection ||
+    selection.rangeCount === 0 ||
+    !anchorNode ||
+    !element.contains(anchorNode) ||
+    maxLength <= 0
+  ) {
+    return "";
+  }
 
-  const range = selection.getRangeAt(0).cloneRange();
-  range.selectNodeContents(element);
-  range.setEnd(selection.anchorNode!, selection.anchorOffset);
-  return range.toString();
+  // Walk backward through nearby text nodes so large editors are never serialized wholesale.
+  let textNode: Text | null;
+  let offset: number;
+  if (anchorNode.nodeType === Node.TEXT_NODE) {
+    textNode = anchorNode as Text;
+    offset = Math.min(selection.anchorOffset, textNode.data.length);
+  } else {
+    const child = anchorNode.childNodes[selection.anchorOffset - 1];
+    textNode = child
+      ? findLastTextNode(child)
+      : findPreviousTextNode(element, anchorNode);
+    offset = textNode?.data.length ?? 0;
+  }
+
+  const parts: string[] = [];
+  let remaining = maxLength;
+  while (textNode && remaining > 0) {
+    const text = textNode.data.slice(0, offset);
+    const part = text.slice(-remaining);
+    if (part) parts.unshift(part);
+    remaining -= part.length;
+    textNode = findPreviousTextNode(element, textNode);
+    offset = textNode?.data.length ?? 0;
+  }
+  return parts.join("");
+}
+
+function findLastTextNode(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text;
+  for (let index = node.childNodes.length - 1; index >= 0; index -= 1) {
+    const textNode = findLastTextNode(node.childNodes[index]);
+    if (textNode) return textNode;
+  }
+  return null;
+}
+
+function findPreviousTextNode(root: Node, node: Node): Text | null {
+  let current: Node | null = node;
+  while (current && current !== root) {
+    if (current.previousSibling) {
+      const textNode = findLastTextNode(current.previousSibling);
+      if (textNode) return textNode;
+    }
+    current = current.parentNode;
+  }
+  return null;
 }
 
 function htmlToText(html: string): string {
