@@ -10,6 +10,8 @@
 
 - Create macros with a name, shortcut, and expanded text.
 - Expand macros in text fields, textareas, and compatible editors.
+- Expand plain-text macros in the main WhatsApp Web message composer.
+- Expand large macros in HubSpot through a performance-safe plain-text mode.
 - Press `Shift + Space` to expand a macro.
 - Organize macros into folders and subfolders.
 - Search by macro name, shortcut, or content.
@@ -56,6 +58,8 @@ The extension needs access to text fields on web pages to detect shortcuts and e
 ## Compatibility
 
 LilacKeys works with Chromium-based browsers that support Manifest V3, including Google Chrome and Microsoft Edge.
+
+In HubSpot, only small and structurally simple macros keep supported rich-text structure after unnecessary pasted markup is removed. Content over 4 KB, with more than 40 HTML elements, or with complex lists, links, or nesting uses a performance-safe plain-text mode. Payloads larger than 128 KB are blocked as a safety measure.
 
 ## License
 
