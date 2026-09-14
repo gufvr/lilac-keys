@@ -1,11 +1,12 @@
 {
   "name": "lilac-keys",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --experimental-strip-types --test tests/whatsappEditor.test.ts tests/macroStorage.test.ts tests/macroCache.test.ts tests/hubspotEditor.test.ts",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
@@ -23,6 +24,7 @@
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "linkedom": "^0.18.12",
     "typescript": "^5.2.2",
     "vite": "^5.0.8"
   }

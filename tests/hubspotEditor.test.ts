@@ -8,8 +8,11 @@ import {
   classifyHubSpotPayload,
   findHubSpotEditor,
   htmlToHubSpotPlainText,
+  insertStructuredBatches,
   isHubSpotPage,
   measureHubSpotResponsiveness,
+  prepareHubSpotHtml,
+  runExclusiveHubSpotExpansion,
   sanitizeHubSpotHtml,
 } from "../src/content/editors/hubspotEditor.ts";
 
@@ -110,15 +113,15 @@ test("rejeita caixas de pesquisa e campos fora da seleção", () => {
   );
 });
 
-test("reserva rich para macros pequenas e estruturalmente simples", () => {
+test("reserva rich para macros pequenas e usa structured nas maiores", () => {
   assert.equal(classifyHubSpotPayload("<p>Olá! 😊</p>").strategy, "rich");
-  assert.equal(classifyHubSpotPayload(htmlWithSize(5)).strategy, "plain");
-  assert.equal(classifyHubSpotPayload(htmlWithSize(25)).strategy, "plain");
-  assert.equal(classifyHubSpotPayload(htmlWithSize(50)).strategy, "plain");
-  assert.equal(classifyHubSpotPayload(htmlWithSize(100)).strategy, "plain");
+  assert.equal(classifyHubSpotPayload(htmlWithSize(5)).strategy, "structured");
+  assert.equal(classifyHubSpotPayload(htmlWithSize(25)).strategy, "structured");
+  assert.equal(classifyHubSpotPayload(htmlWithSize(50)).strategy, "structured");
+  assert.equal(classifyHubSpotPayload(htmlWithSize(100)).strategy, "structured");
 });
 
-test("regressão: 4.981 caracteres e cerca de 102 elementos usam texto simples", () => {
+test("regressão: 4.981 caracteres e cerca de 102 elementos usam lotes estruturados", () => {
   const units = Array.from(
     { length: 51 },
     (_, index) => `<p><strong>Etapa ${index + 1}</strong> ${"x".repeat(65)}</p>`,
@@ -128,21 +131,26 @@ test("regressão: 4.981 caracteres e cerca de 102 elementos usam texto simples",
 
   assert.equal(plan.characters, 4981);
   assert.equal(plan.estimatedElements, 102);
-  assert.equal(plan.strategy, "plain");
+  assert.equal(plan.strategy, "structured");
 });
 
 test("complexidade estrutural impede rich mesmo em conteúdo curto", () => {
   const nested = `<ul>${"<li><a href=\"https://example.com\">Item</a></li>".repeat(13)}</ul>`;
   const plan = classifyHubSpotPayload(nested);
 
-  assert.equal(plan.strategy, "plain");
+  assert.equal(plan.strategy, "structured");
   assert.equal(plan.listItems, 13);
   assert.equal(plan.links, 13);
   assert.ok(plan.complexity > 90);
 });
 
 test("bloqueia cargas acima do limite de segurança", () => {
+  assert.equal(classifyHubSpotPayload(htmlWithSize(128)).strategy, "structured");
   assert.equal(classifyHubSpotPayload(htmlWithSize(129)).strategy, "blocked");
+  assert.equal(
+    classifyHubSpotPayload("<p>x</p>".repeat(1001)).strategy,
+    "blocked",
+  );
 });
 
 test("remove excesso de Word e Gmail preservando a estrutura útil", () => {
@@ -194,6 +202,25 @@ test("processa 100 KB sem criar uma tarefa longa no sanitizador", (context) => {
   context.diagnostic(`100 KB processados em ${durationMs.toFixed(1)} ms`);
 });
 
+test("prepara lotes estruturados de 5, 25, 50 e 100 KB", (context) => {
+  const document = createDocument();
+  for (const kilobytes of [5, 25, 50, 100]) {
+    const unit = `<p><strong>Etapa</strong> ${"x".repeat(900)} 😊</p>`;
+    const html = unit.repeat(Math.ceil((kilobytes * 1024) / unit.length));
+    const startedAt = performance.now();
+    const prepared = prepareHubSpotHtml(html, document);
+    const durationMs = performance.now() - startedAt;
+
+    assert.ok(prepared.batches.length > 0);
+    assert.ok(prepared.batches.length <= 100);
+    assert.ok(prepared.batches.every((batch) => batch.length <= 8 * 1024));
+    assert.ok(durationMs < 2000, `${kilobytes} KB levou ${durationMs.toFixed(1)} ms`);
+    context.diagnostic(
+      `${kilobytes} KB: ${prepared.batches.length} lotes em ${durationMs.toFixed(1)} ms`,
+    );
+  }
+});
+
 test("mede responsividade depois de dois frames sem conteúdo da macro", () => {
   const callbacks: FrameRequestCallback[] = [];
   const messages: unknown[][] = [];
@@ -217,4 +244,194 @@ test("mede responsividade depois de dois frames sem conteúdo da macro", () => {
   } finally {
     console.info = originalInfo;
   }
+});
+
+test("preserva HTML semântico, links seguros e imagens HTTPS limitadas", () => {
+  const document = createDocument();
+  const html = `
+    <p class="MsoNormal"><strong>Negrito</strong> <em>Itálico</em> <u>Sublinhado</u> <s>Riscado</s></p>
+    <ol start="3"><li>Primeiro<ul><li>Interno</li></ul></li><li>Segundo</li></ol>
+    <a href="mailto:teste@example.com" target="_blank">E-mail</a>
+    <img src="https://cdn.example.com/a.png" alt="Produto" width="2000" height="500" class="imagem" />
+    <img src="data:image/png;base64,AAAA" alt="Incorporada" />
+    <img src="blob:https://app.hubspot.com/id" alt="Temporária" />`;
+  const prepared = prepareHubSpotHtml(html, document);
+
+  assert.match(prepared.html, /<strong>Negrito<\/strong>/);
+  assert.match(prepared.html, /<em>Itálico<\/em>/);
+  assert.match(prepared.html, /<u>Sublinhado<\/u>/);
+  assert.match(prepared.html, /<s>Riscado<\/s>/);
+  assert.match(prepared.html, /<ol start="3"><li>Primeiro<ul><li>Interno<\/li><\/ul><\/li>/);
+  assert.match(prepared.html, /href="mailto:teste@example.com"/);
+  assert.match(prepared.html, /<img\b[^>]*src="https:\/\/cdn\.example\.com\/a\.png"/);
+  assert.match(prepared.html, /<img\b[^>]*alt="Produto"/);
+  assert.match(prepared.html, /<img\b[^>]*width="1600"/);
+  assert.match(prepared.html, /<img\b[^>]*height="500"/);
+  assert.match(prepared.html, /\[Imagem: Incorporada\]/);
+  assert.match(prepared.html, /\[Imagem: Temporária\]/);
+  assert.doesNotMatch(prepared.html, /class=|target=|data:image|blob:/);
+  assert.equal(prepared.acceptedImages, 1);
+  assert.equal(prepared.rejectedImages, 2);
+});
+
+test("limita imagens HTTPS e remove pixels de rastreamento", () => {
+  const document = createDocument();
+  const images = [
+    '<img src="https://cdn.example.com/track.gif" alt="Track" width="1" height="1">',
+    ...Array.from(
+      { length: 4 },
+      (_, index) => `<img src="https://cdn.example.com/${index}.png" alt="Imagem ${index}">`,
+    ),
+  ].join("");
+  const prepared = prepareHubSpotHtml(images, document);
+
+  assert.equal(prepared.acceptedImages, 3);
+  assert.equal(prepared.rejectedImages, 2);
+  assert.equal((prepared.html.match(/<img\b/g) ?? []).length, 3);
+  assert.match(prepared.html, /\[Imagem: Track\]/);
+});
+
+test("divide listas ordenadas entre itens mantendo a numeração", () => {
+  const document = createDocument();
+  const html = `<ol start="5">${Array.from(
+    { length: 70 },
+    (_, index) => `<li><strong>Item ${index + 1}</strong></li>`,
+  ).join("")}</ol>`;
+  const prepared = prepareHubSpotHtml(html, document);
+
+  assert.ok(prepared.batches.length >= 3);
+  assert.match(prepared.batches[0], /^<ol start="5">/);
+  assert.match(prepared.batches[1], /<ol start="/);
+  assert.equal(
+    prepared.batches.reduce(
+      (total, batch) => total + (batch.match(/<li>/g) ?? []).length,
+      0,
+    ),
+    70,
+  );
+  assert.equal(
+    prepared.batches.reduce(
+      (total, batch) => total + (batch.match(/<strong>/g) ?? []).length,
+      0,
+    ),
+    70,
+  );
+});
+
+test("divide parágrafo grande preservando formatação inline", () => {
+  const document = createDocument();
+  const prepared = prepareHubSpotHtml(
+    `<p><strong>${"á😊".repeat(6000)}</strong></p>`,
+    document,
+  );
+
+  assert.ok(prepared.batches.length > 1);
+  assert.ok(prepared.batches.every((batch) => batch.length <= 8 * 1024));
+  assert.ok(prepared.batches.every((batch) => batch.startsWith("<p><strong>")));
+  assert.ok(prepared.batches.every((batch) => batch.endsWith("</strong></p>")));
+  const restored = prepared.batches
+    .map((batch) => {
+      const batchDocument = createDocument();
+      const container = batchDocument.createElement("div");
+      container.innerHTML = batch;
+      return container.textContent;
+    })
+    .join("");
+  assert.equal(restored, "á😊".repeat(6000));
+  assert.doesNotMatch(restored, /�/);
+});
+
+test("considera expansão de entidades HTML no limite do lote", () => {
+  const document = createDocument();
+  const prepared = prepareHubSpotHtml(`<p>${"&".repeat(5000)}</p>`, document);
+
+  assert.ok(prepared.batches.length > 1);
+  assert.ok(prepared.batches.every((batch) => batch.length <= 8 * 1024));
+});
+
+test("insere lotes em ordem, cedendo um frame e mantendo a seleção", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const inserted: string[] = [];
+  let yields = 0;
+  let now = 0;
+  const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
+    insertHtml: (_editor, html) => {
+      inserted.push(html);
+      return true;
+    },
+    yieldFrame: async () => {
+      yields += 1;
+    },
+    selectionBelongs: () => true,
+    now: () => (now += 2),
+  });
+
+  assert.equal(result.inserted, true);
+  assert.deepEqual(inserted, ["<p>A</p>", "<p>B</p>"]);
+  assert.equal(yields, 1);
+  assert.deepEqual(result.batchDurationsMs, [2, 2]);
+});
+
+test("interrompe lotes quando a seleção deixa o editor", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  let selectionChecks = 0;
+  let insertions = 0;
+  const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
+    insertHtml: () => {
+      insertions += 1;
+      return true;
+    },
+    yieldFrame: async () => undefined,
+    selectionBelongs: () => {
+      selectionChecks += 1;
+      return selectionChecks < 3;
+    },
+  });
+
+  assert.equal(result.inserted, false);
+  assert.equal(insertions, 1);
+});
+
+test("rejeita mais de 100 lotes antes da primeira inserção", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  let insertions = 0;
+  const result = await insertStructuredBatches(
+    editor,
+    Array.from({ length: 101 }, () => "<p>x</p>"),
+    {
+      insertHtml: () => {
+        insertions += 1;
+        return true;
+      },
+      selectionBelongs: () => true,
+    },
+  );
+
+  assert.equal(result.inserted, false);
+  assert.equal(insertions, 0);
+});
+
+test("bloqueia duas expansões concorrentes no mesmo editor", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = runExclusiveHubSpotExpansion(editor, async () => {
+    await pending;
+    return "first";
+  });
+  const duplicate = await runExclusiveHubSpotExpansion(editor, async () => "duplicate");
+  release();
+
+  assert.equal(duplicate, null);
+  assert.equal(await first, "first");
+  assert.equal(
+    await runExclusiveHubSpotExpansion(editor, async () => "next"),
+    "next",
+  );
 });

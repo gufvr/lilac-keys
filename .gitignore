@@ -8,10 +8,12 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-LilacKeys-upload.zip
 dist/
 dist-ssr
 *.local
+
+# Pacotes de distribuição da extensão
+*.zip
 
 # Editor directories and files
 .vscode/*
@@ -23,5 +25,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-*.zip
 dist/

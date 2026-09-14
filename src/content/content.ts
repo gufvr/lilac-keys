@@ -1,40 +1,102 @@
-import { Macro } from "../types/macro";
+import {
+  expandWhatsAppMacro,
+  findWhatsAppMessageComposer,
+  insertWhatsAppSpace,
+  isWhatsAppWebPage,
+} from "./editors/whatsappEditor";
+import {
+  expandHubSpotMacro,
+  findHubSpotEditor,
+} from "./editors/hubspotEditor";
+import { createChromeMacroCache } from "./macroCache";
+import { findIndexedMacro, type MacroSnapshot } from "./macroIndex";
 
 const PLACEHOLDER_PATTERN = /%[^%\r\n]+%/g;
+const macroCache = createChromeMacroCache();
 let isExpandingMacro = false;
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Tab" && moveToNextPlaceholder(e)) return;
-  if (e.key !== " " || !e.shiftKey || !isSupportedEditable(document.activeElement)) {
+  if (e.key !== " " || !e.shiftKey) return;
+
+  const whatsappComposer = findWhatsAppMessageComposer({
+    eventTarget: e.target,
+    eventPath: e.composedPath(),
+    activeElement: document.activeElement,
+    selection: window.getSelection(),
+  });
+  const hubspotEditor = findHubSpotEditor({
+    eventTarget: e.target,
+    eventPath: e.composedPath(),
+    activeElement: document.activeElement,
+    selection: window.getSelection(),
+  });
+  if (isWhatsAppWebPage() && !whatsappComposer) return;
+  if (
+    !whatsappComposer &&
+    !hubspotEditor &&
+    !isSupportedEditable(document.activeElement)
+  ) {
     return;
   }
-  if (isExpandingMacro) return;
+  if ((whatsappComposer || hubspotEditor) && (e.repeat || e.isComposing)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  if (isExpandingMacro) {
+    if (whatsappComposer || hubspotEditor) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    return;
+  }
 
   e.preventDefault();
   e.stopPropagation();
-  void handleKeydown(e).catch((error: unknown) => {
-    if (isExtensionContextInvalidated(error)) return;
-    console.error("LilacKeys: erro ao processar atalho", error);
-  });
+  void handleKeydown(e, whatsappComposer, hubspotEditor).catch(
+    (error: unknown) => {
+      if (isExtensionContextInvalidated(error)) return;
+      console.error("LilacKeys: erro ao processar atalho", error);
+    },
+  );
 }, true);
 
-async function handleKeydown(e: KeyboardEvent): Promise<void> {
+async function handleKeydown(
+  e: KeyboardEvent,
+  initialWhatsAppComposer: HTMLElement | null,
+  initialHubSpotEditor: HTMLElement | null,
+): Promise<void> {
   if (!(e.key === " " && e.shiftKey)) return;
 
   if (isExpandingMacro) return;
   isExpandingMacro = true;
   try {
     const el = document.activeElement;
+    const whatsappComposer = initialWhatsAppComposer;
+    const hubspotEditor = initialHubSpotEditor;
+    if (isWhatsAppWebPage() && !whatsappComposer) return;
     const isPlainTextField =
       el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
     const isRichTextField = el instanceof HTMLElement && el.isContentEditable;
 
-    if (!isPlainTextField && !isRichTextField) return;
+    if (
+      !whatsappComposer &&
+      !hubspotEditor &&
+      !isPlainTextField &&
+      !isRichTextField
+    ) {
+      return;
+    }
 
     const plainTextElement = isPlainTextField ? el : null;
     const richTextElement = isRichTextField ? el : null;
-    const macros = await loadMacros();
-    if (!macros) {
+    const snapshot = await macroCache.getSnapshot();
+    if (!snapshot) {
+      if (whatsappComposer) {
+        insertWhatsAppSpace(whatsappComposer);
+        return;
+      }
       insertSpace(
         plainTextElement,
         richTextElement,
@@ -42,16 +104,35 @@ async function handleKeydown(e: KeyboardEvent): Promise<void> {
       );
       return;
     }
-    const maxShortcutLength = getMaxShortcutLength(macros);
+    if (whatsappComposer) {
+      const result = expandWhatsAppMacro(
+        whatsappComposer,
+        snapshot.macros,
+        htmlToText,
+      );
+      if (result === "failed") {
+        console.warn(
+          "LilacKeys: não foi possível atualizar o compositor do WhatsApp.",
+        );
+      }
+      return;
+    }
+    if (hubspotEditor) {
+      await expandHubSpotMacro(hubspotEditor, snapshot);
+      return;
+    }
     const start = plainTextElement?.selectionStart ?? 0;
     const valueBeforeCursor = plainTextElement
       ? plainTextElement.value.slice(
-          Math.max(0, start - maxShortcutLength),
+          Math.max(0, start - snapshot.maxShortcutLength),
           start,
         )
-      : getEditableTextBeforeCursor(richTextElement!, maxShortcutLength);
+      : getEditableTextBeforeCursor(
+          richTextElement!,
+          snapshot.maxShortcutLength,
+        );
     expandMacro(
-      macros,
+      snapshot,
       plainTextElement,
       richTextElement,
       start,
@@ -74,81 +155,23 @@ function isSupportedEditable(
   );
 }
 
-function loadMacros(): Promise<Macro[] | null> {
-  return new Promise((resolve) => {
-    if (chrome.storage?.local) {
-      try {
-        chrome.storage.local.get("lilac-keys-macros", (result) => {
-          const error = chrome.runtime.lastError;
-          if (!error) {
-            resolve((result["lilac-keys-macros"] as Macro[] | undefined) ?? []);
-            return;
-          }
-          requestMacrosFromBackground(resolve);
-        });
-        return;
-      } catch {
-        requestMacrosFromBackground(resolve);
-        return;
-      }
-    }
-
-    requestMacrosFromBackground(resolve);
-  });
-}
-
-function requestMacrosFromBackground(
-  resolve: (macros: Macro[] | null) => void,
-): void {
-  try {
-    chrome.runtime.sendMessage({ type: "getMacros" }, (response) => {
-      const error = chrome.runtime.lastError;
-      if (error) {
-        if (!isExtensionContextInvalidated(error)) {
-          console.error("LilacKeys: falha ao carregar macros", error);
-        }
-        resolve(null);
-        return;
-      }
-      resolve((response?.macros as Macro[] | undefined) ?? []);
-    });
-  } catch (error) {
-    if (!isExtensionContextInvalidated(error)) {
-      console.error("LilacKeys: falha ao carregar macros", error);
-    }
-    resolve(null);
-  }
-}
-
 function expandMacro(
-  macros: Macro[],
+  snapshot: MacroSnapshot,
   plainTextElement: HTMLInputElement | HTMLTextAreaElement | null,
   richTextElement: HTMLElement | null,
   start: number,
   valueBeforeCursor: string,
 ): void {
-  const normalizedValueBeforeCursor = valueBeforeCursor.toLowerCase();
-  let macro: Macro | undefined;
-  let shortcutLength = 0;
-  for (const item of macros) {
-    const shortcut = item.atalho.trim().toLowerCase();
-    if (
-      shortcut.length > shortcutLength &&
-      normalizedValueBeforeCursor.endsWith(shortcut)
-    ) {
-      macro = item;
-      shortcutLength = shortcut.length;
-    }
-  }
+  const match = findIndexedMacro(snapshot, valueBeforeCursor);
 
-  if (!macro) {
+  if (!match) {
     insertSpace(plainTextElement, richTextElement, start);
     return;
   }
 
   if (plainTextElement) {
-    const expandedText = htmlToText(macro.textoExpandido);
-    const replacementStart = start - shortcutLength;
+    const expandedText = htmlToText(match.macro.textoExpandido);
+    const replacementStart = start - match.shortcutLength;
     plainTextElement.setRangeText(
       expandedText,
       replacementStart,
@@ -160,23 +183,16 @@ function expandMacro(
     return;
   }
 
-  if (!selectCharactersBeforeCursor(shortcutLength)) return;
-  const expandedHtml = hasPlaceholders(macro.textoExpandido)
-    ? addPlaceholderMarkers(macro.textoExpandido)
-    : macro.textoExpandido;
+  if (!selectCharactersBeforeCursor(match.shortcutLength)) return;
+  const expandedHtml = hasPlaceholders(match.macro.textoExpandido)
+    ? addPlaceholderMarkers(match.macro.textoExpandido)
+    : match.macro.textoExpandido;
   document.execCommand(
     "insertHTML",
     false,
     expandedHtml,
   );
   selectNextContentPlaceholder(richTextElement!);
-}
-
-function getMaxShortcutLength(macros: Macro[]): number {
-  return macros.reduce(
-    (maxLength, macro) => Math.max(maxLength, macro.atalho.trim().length),
-    0,
-  );
 }
 
 function moveToNextPlaceholder(event: KeyboardEvent): boolean {

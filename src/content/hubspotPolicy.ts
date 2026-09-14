@@ -5,8 +5,9 @@ const RICH_MAX_LIST_ITEMS = 12;
 const RICH_MAX_LINKS = 8;
 const RICH_MAX_COMPLEXITY = 90;
 const MAX_EXPANSION_CHARACTERS = 128 * 1024;
+const MAX_EXPANSION_ELEMENTS = 1000;
 
-export type HubSpotExpansionStrategy = "rich" | "plain" | "blocked";
+export type HubSpotExpansionStrategy = "rich" | "structured" | "blocked";
 
 export interface HubSpotPayloadPlan {
   strategy: HubSpotExpansionStrategy;
@@ -15,13 +16,17 @@ export interface HubSpotPayloadPlan {
   maxDepth: number;
   listItems: number;
   links: number;
+  images: number;
   blockElements: number;
   complexity: number;
 }
 
 export function classifyHubSpotPayload(html: string): HubSpotPayloadPlan {
   const metrics = analyzeHubSpotPayload(html);
-  if (metrics.characters > MAX_EXPANSION_CHARACTERS) {
+  if (
+    metrics.characters > MAX_EXPANSION_CHARACTERS ||
+    metrics.estimatedElements > MAX_EXPANSION_ELEMENTS
+  ) {
     return { strategy: "blocked", ...metrics };
   }
 
@@ -32,7 +37,7 @@ export function classifyHubSpotPayload(html: string): HubSpotPayloadPlan {
     metrics.listItems <= RICH_MAX_LIST_ITEMS &&
     metrics.links <= RICH_MAX_LINKS &&
     metrics.complexity <= RICH_MAX_COMPLEXITY;
-  return { strategy: richIsSafe ? "rich" : "plain", ...metrics };
+  return { strategy: richIsSafe ? "rich" : "structured", ...metrics };
 }
 
 function analyzeHubSpotPayload(
@@ -43,6 +48,7 @@ function analyzeHubSpotPayload(
   let maxDepth = 0;
   let listItems = 0;
   let links = 0;
+  let images = 0;
   let blockElements = 0;
   const tagPattern = /<\s*(\/?)\s*([a-z][a-z0-9-]*)\b[^>]*>/gi;
   let match = tagPattern.exec(html);
@@ -56,6 +62,7 @@ function analyzeHubSpotPayload(
       estimatedElements += 1;
       if (tag === "li") listItems += 1;
       if (tag === "a") links += 1;
+      if (tag === "img") images += 1;
       if (BLOCK_TAGS.has(tag)) blockElements += 1;
       if (!selfClosing) {
         depth += 1;
@@ -70,13 +77,15 @@ function analyzeHubSpotPayload(
     maxDepth * 3 +
     blockElements * 2 +
     listItems * 3 +
-    links * 4;
+    links * 4 +
+    images * 10;
   return {
     characters: html.length,
     estimatedElements,
     maxDepth,
     listItems,
     links,
+    images,
     blockElements,
     complexity,
   };

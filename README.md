@@ -59,7 +59,7 @@ The extension needs access to text fields on web pages to detect shortcuts and e
 
 LilacKeys works with Chromium-based browsers that support Manifest V3, including Google Chrome and Microsoft Edge.
 
-In HubSpot, only small and structurally simple macros keep supported rich-text structure after unnecessary pasted markup is removed. Content over 4 KB, with more than 40 HTML elements, or with complex lists, links, or nesting uses a performance-safe plain-text mode. Payloads larger than 128 KB are blocked as a safety measure.
+In HubSpot, small and structurally simple macros are inserted as sanitized rich text. Larger macros use semantic HTML batches to preserve paragraphs, formatting, lists, links, safe HTTPS images, emojis, and accents while yielding control back to the browser. Payloads larger than 128 KB or 1,000 HTML elements are blocked as a safety measure.
 
 ## License
 

@@ -40,7 +40,7 @@ test("pré-calcula e atualiza a política do HubSpot para macros futuras", () =>
   ];
 
   const updated = cache.update(large);
-  assert.equal(updated.entries[0].hubspotPlan.strategy, "plain");
+  assert.equal(updated.entries[0].hubspotPlan.strategy, "structured");
 });
 
 test("carrega as macros uma única vez e reutiliza o snapshot", async () => {
@@ -95,5 +95,5 @@ test("recalcula o plano do HubSpot ao receber mudança do storage", () => {
     "local",
   );
 
-  assert.equal(cache.current?.entries[0].hubspotPlan.strategy, "plain");
+  assert.equal(cache.current?.entries[0].hubspotPlan.strategy, "structured");
 });
