@@ -1,5 +1,6 @@
 import {
   PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -101,6 +102,32 @@ export function MacroList({
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const suppressFolderClickRef = useRef(false);
+
+  const moveFolder = useCallback(
+    (
+      folder: Folder,
+      parentId?: string,
+      placement: "inside" | "above" | "below" = "inside",
+      relativeToId?: string,
+    ) => {
+      const result = onMoveFolder(folder.id, parentId, placement, relativeToId);
+      if (!result.success) window.alert(result.error);
+      if (result.success) setFolderToMove(undefined);
+    },
+    [onMoveFolder],
+  );
+
+  const isDescendantOf = useCallback(
+    (folderId: string, ancestorId: string): boolean => {
+      let folder = folders.find((item) => item.id === folderId);
+      while (folder?.parentId) {
+        if (folder.parentId === ancestorId) return true;
+        folder = folders.find((item) => item.id === folder?.parentId);
+      }
+      return false;
+    },
+    [folders],
+  );
 
   useEffect(() => {
     if (
@@ -240,7 +267,14 @@ export function MacroList({
       window.removeEventListener("pointercancel", finishDrag);
       if (autoScroll) window.clearInterval(autoScroll);
     };
-  }, [folderDrag, folderDropTarget, folders]);
+  }, [
+    folderDrag,
+    folderDropTarget,
+    folders,
+    isDescendantOf,
+    moveFolder,
+    onMoveFolders,
+  ]);
   const currentFolder = folders.find((folder) => folder.id === currentFolderId);
   const folderTree = useMemo(() => flattenFolders(folders), [folders]);
   const childFolders = useMemo(
@@ -334,16 +368,6 @@ export function MacroList({
       }
     }
   };
-  const moveFolder = (
-    folder: Folder,
-    parentId?: string,
-    placement: "inside" | "above" | "below" = "inside",
-    relativeToId?: string,
-  ) => {
-    const result = onMoveFolder(folder.id, parentId, placement, relativeToId);
-    if (!result.success) window.alert(result.error);
-    if (result.success) setFolderToMove(undefined);
-  };
   const moveSelectedFolders = (parentId?: string) => {
     const result = onMoveFolders(selectedFolders, parentId);
     if (!result.success) window.alert(result.error);
@@ -364,14 +388,6 @@ export function MacroList({
       else next.add(folderId);
       return next;
     });
-  };
-  const isDescendantOf = (folderId: string, ancestorId: string): boolean => {
-    let folder = folders.find((item) => item.id === folderId);
-    while (folder?.parentId) {
-      if (folder.parentId === ancestorId) return true;
-      folder = folders.find((item) => item.id === folder?.parentId);
-    }
-    return false;
   };
   if (macros.length === 0 && folders.length === 0) {
     return (

@@ -81,6 +81,13 @@ export interface PreparedHubSpotHtml {
 export interface StructuredInsertionResult {
   inserted: boolean;
   batchDurationsMs: number[];
+  failureReason?:
+    | "invalid-batches"
+    | "selection-left-editor"
+    | "boundary-creation-failed"
+    | "marker-missing-or-duplicated"
+    | "caret-restore-failed"
+    | "batch-insertion-failed";
 }
 
 export function isHubSpotPage(
@@ -195,6 +202,7 @@ async function performHubSpotExpansion(
     preparationMs,
     insertion.batchDurationsMs,
     !insertion.inserted,
+    insertion.failureReason,
   );
   if (insertion.inserted) {
     selectFirstHubSpotPlaceholder(editor);
@@ -368,21 +376,37 @@ function createStructuredBatches(
   let currentHtml = "";
   let currentElements = 0;
 
+  const flush = () => {
+    if (!currentHtml) return;
+    batches.push(currentHtml);
+    currentHtml = "";
+    currentElements = 0;
+  };
+
   units.forEach((unit) => {
+    if (unit.isolated) {
+      flush();
+      batches.push(unit.html);
+      return;
+    }
     const exceedsBatch =
       currentHtml.length > 0 &&
       (currentHtml.length + unit.html.length > STRUCTURED_BATCH_MAX_CHARACTERS ||
         currentElements + unit.elements > STRUCTURED_BATCH_MAX_ELEMENTS);
     if (exceedsBatch) {
-      batches.push(currentHtml);
-      currentHtml = "";
-      currentElements = 0;
+      flush();
     }
     currentHtml += unit.html;
     currentElements += unit.elements;
   });
-  if (currentHtml) batches.push(currentHtml);
+  flush();
   return batches;
+}
+
+interface SemanticUnit {
+  html: string;
+  elements: number;
+  isolated: boolean;
 }
 
 function createSemanticUnits(
@@ -390,7 +414,7 @@ function createSemanticUnits(
   ownerDocument: Document,
   maximumCharacters = STRUCTURED_BATCH_MAX_CHARACTERS,
   maximumElements = STRUCTURED_BATCH_MAX_ELEMENTS,
-): Array<{ html: string; elements: number }> {
+): SemanticUnit[] {
   if (node.nodeType !== 1) {
     return splitSerializedText(node.textContent ?? "", ownerDocument, maximumCharacters);
   }
@@ -404,7 +428,7 @@ function createSemanticUnits(
     html.length <= maximumCharacters &&
     elements <= maximumElements
   ) {
-    return [{ html, elements }];
+    return [{ html, elements, isolated: false }];
   }
 
   const clone = element.cloneNode(false) as Element;
@@ -419,6 +443,7 @@ function createSemanticUnits(
       return splitTextForHtml(child.textContent ?? "", availableCharacters).map((part) => ({
         html: escapeHtml(part, ownerDocument),
         elements: 0,
+        isolated: false,
       }));
     }
     return createSemanticUnits(
@@ -428,32 +453,41 @@ function createSemanticUnits(
       Math.max(1, maximumElements - 1),
     );
   });
-  const wrapped: Array<{ html: string; elements: number }> = [];
+  const wrapped: SemanticUnit[] = [];
   let innerHtml = "";
   let innerElements = 0;
+  const flushWrapped = () => {
+    if (!innerHtml) return;
+    wrapped.push({
+      html: `${opening}${innerHtml}${closing}`,
+      elements: innerElements + 1,
+      isolated: false,
+    });
+    innerHtml = "";
+    innerElements = 0;
+  };
   childUnits.forEach((unit) => {
+    if (unit.isolated) {
+      flushWrapped();
+      wrapped.push({
+        html: `${opening}${unit.html}${closing}`,
+        elements: unit.elements + 1,
+        isolated: true,
+      });
+      return;
+    }
     const exceeds =
       innerHtml.length > 0 &&
       (opening.length + innerHtml.length + unit.html.length + closing.length >
         maximumCharacters ||
         innerElements + unit.elements + 1 > maximumElements);
     if (exceeds) {
-      wrapped.push({
-        html: `${opening}${innerHtml}${closing}`,
-        elements: innerElements + 1,
-      });
-      innerHtml = "";
-      innerElements = 0;
+      flushWrapped();
     }
     innerHtml += unit.html;
     innerElements += unit.elements;
   });
-  if (innerHtml) {
-    wrapped.push({
-      html: `${opening}${innerHtml}${closing}`,
-      elements: innerElements + 1,
-    });
-  }
+  flushWrapped();
   return wrapped;
 }
 
@@ -461,8 +495,8 @@ function splitList(
   list: Element,
   maximumCharacters: number,
   maximumElements: number,
-): Array<{ html: string; elements: number }> {
-  const chunks: Array<{ html: string; elements: number }> = [];
+): SemanticUnit[] {
+  const chunks: SemanticUnit[] = [];
   const items = Array.from(list.children).filter((child) => child.tagName === "LI");
   const tag = list.tagName.toLowerCase();
   const closing = `</${tag}>`;
@@ -481,6 +515,7 @@ function splitList(
     chunks.push({
       html: `${opening()}${currentItemsHtml}${closing}`,
       elements: currentElements,
+      isolated: true,
     });
     consumedItems += currentItemCount;
     currentItemsHtml = "";
@@ -511,10 +546,11 @@ function splitSerializedText(
   text: string,
   ownerDocument: Document,
   maximumCharacters: number,
-): Array<{ html: string; elements: number }> {
+): SemanticUnit[] {
   return splitTextForHtml(text, maximumCharacters).map((part) => ({
     html: escapeHtml(part, ownerDocument),
     elements: 0,
+    isolated: false,
   }));
 }
 
@@ -830,9 +866,7 @@ function selectCharactersBeforeCursor(
 }
 
 function insertHtmlAtSelection(editor: HTMLElement, html: string): boolean {
-  const before = editor.innerHTML;
-  const commandSucceeded = document.execCommand("insertHTML", false, html);
-  return commandSucceeded || editor.innerHTML !== before;
+  return editor.ownerDocument.execCommand("insertHTML", false, html);
 }
 
 function insertSingleRichBatch(
@@ -849,9 +883,17 @@ function insertSingleRichBatch(
 
 interface StructuredInsertionOptions {
   insertHtml?: (editor: HTMLElement, html: string) => boolean;
+  createBoundary?: (editor: HTMLElement) => InsertionBoundary | null;
   yieldFrame?: () => Promise<void>;
   selectionBelongs?: (editor: HTMLElement) => boolean;
   now?: () => number;
+}
+
+export interface InsertionBoundary {
+  isPresent: () => boolean;
+  placeCaret: () => boolean;
+  finish: () => boolean;
+  cleanup: () => void;
 }
 
 export async function insertStructuredBatches(
@@ -860,6 +902,8 @@ export async function insertStructuredBatches(
   options: StructuredInsertionOptions = {},
 ): Promise<StructuredInsertionResult> {
   const insertHtml = options.insertHtml ?? insertHtmlAtSelection;
+  const createBoundary =
+    options.createBoundary ?? createHubSpotInsertionBoundary;
   const yieldFrame = options.yieldFrame ?? yieldToBrowser;
   const selectionBelongs = options.selectionBelongs ?? selectionBelongsToEditor;
   const now = options.now ?? (() => performance.now());
@@ -872,25 +916,154 @@ export async function insertStructuredBatches(
         estimateBatchElements(batch) <= STRUCTURED_BATCH_MAX_ELEMENTS,
     );
   if (!valid || !selectionBelongs(editor)) {
-    return { inserted: false, batchDurationsMs: [] };
+    return {
+      inserted: false,
+      batchDurationsMs: [],
+      failureReason: valid ? "selection-left-editor" : "invalid-batches",
+    };
+  }
+
+  const boundary = createBoundary(editor);
+  if (!boundary?.placeCaret()) {
+    boundary?.cleanup();
+    return {
+      inserted: false,
+      batchDurationsMs: [],
+      failureReason: "boundary-creation-failed",
+    };
   }
 
   const batchDurationsMs: number[] = [];
-  for (let index = 0; index < batches.length; index += 1) {
-    if (!selectionBelongs(editor)) {
-      return { inserted: false, batchDurationsMs };
+  let completed = false;
+  try {
+    for (let index = 0; index < batches.length; index += 1) {
+      if (!boundary.isPresent()) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "marker-missing-or-duplicated",
+        };
+      }
+      if (!selectionBelongs(editor)) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "selection-left-editor",
+        };
+      }
+      if (!boundary.placeCaret()) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "caret-restore-failed",
+        };
+      }
+      const startedAt = now();
+      if (!insertHtml(editor, batches[index])) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "batch-insertion-failed",
+        };
+      }
+      batchDurationsMs.push(now() - startedAt);
+      if (!boundary.isPresent()) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "marker-missing-or-duplicated",
+        };
+      }
+      if (!selectionBelongs(editor)) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "selection-left-editor",
+        };
+      }
+      if (index < batches.length - 1) {
+        await yieldFrame();
+      }
     }
-    const startedAt = now();
-    if (!insertHtml(editor, batches[index])) {
-      return { inserted: false, batchDurationsMs };
-    }
-    batchDurationsMs.push(now() - startedAt);
-    if (!selectionBelongs(editor)) {
-      return { inserted: false, batchDurationsMs };
-    }
-    if (index < batches.length - 1) await yieldFrame();
+    completed = boundary.finish();
+    return completed
+      ? { inserted: true, batchDurationsMs }
+      : {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "caret-restore-failed",
+        };
+  } finally {
+    if (!completed) boundary.cleanup();
   }
-  return { inserted: true, batchDurationsMs };
+}
+
+function createHubSpotInsertionBoundary(
+  editor: HTMLElement,
+): InsertionBoundary | null {
+  const ownerDocument = editor.ownerDocument;
+  const initialSelection = ownerDocument.defaultView?.getSelection();
+  const initialAnchor = initialSelection?.anchorNode;
+  const initialElement =
+    initialAnchor?.nodeType === 1
+      ? (initialAnchor as Element)
+      : initialAnchor?.parentElement;
+  if (
+    !initialSelection ||
+    !initialAnchor ||
+    !editor.contains(initialAnchor) ||
+    initialElement?.closest("ol, ul, li")
+  ) {
+    return null;
+  }
+  const token = createBoundaryToken();
+  ownerDocument.execCommand(
+    "insertHTML",
+    false,
+    `<span data-lilackeys-batch-end="${token}">\u200b</span>`,
+  );
+  const selector = `[data-lilackeys-batch-end="${token}"]`;
+  const findMarker = (): HTMLElement | null => {
+    const matches = editor.querySelectorAll<HTMLElement>(selector);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  if (!findMarker()) return null;
+
+  const isPresent = () => Boolean(findMarker());
+  const placeCaret = () => {
+    const marker = findMarker();
+    if (!marker || marker.closest("ol, ul, li")) return false;
+    const selection = ownerDocument.defaultView?.getSelection();
+    if (!selection) return false;
+    const range = ownerDocument.createRange();
+    range.setStartBefore(marker);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  };
+  const finish = () => {
+    const marker = findMarker();
+    if (!marker) return false;
+    if (!placeCaret()) return false;
+    marker.remove();
+    return true;
+  };
+  return {
+    isPresent,
+    placeCaret,
+    finish,
+    cleanup: () => {
+      const marker = findMarker();
+      if (!marker) return;
+      placeCaret();
+      marker.remove();
+    },
+  };
+}
+
+function createBoundaryToken(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function selectionBelongsToEditor(editor: HTMLElement): boolean {
@@ -944,6 +1117,7 @@ function logHubSpotPerformance(
   preparationMs: number,
   batchDurationsMs: readonly number[],
   failed: boolean,
+  failureReason?: StructuredInsertionResult["failureReason"],
 ): void {
   const details = {
     strategy: plan.strategy,
@@ -955,6 +1129,7 @@ function logHubSpotPerformance(
     rejectedImages: prepared.rejectedImages,
     preparationMs: roundDuration(preparationMs),
     batchDurationsMs: batchDurationsMs.map(roundDuration),
+    ...(failureReason ? { failureReason } : {}),
   };
   if (failed) console.warn("LilacKeys: expansão no HubSpot não concluída", details);
   else console.info("LilacKeys: expansão no HubSpot concluída", details);

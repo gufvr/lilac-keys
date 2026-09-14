@@ -24,6 +24,43 @@ function createDocument(): Document {
     .document as unknown as Document;
 }
 
+function createTestBoundary() {
+  let present = true;
+  let stable = true;
+  let placeCalls = 0;
+  let finishCalls = 0;
+  let cleanupCalls = 0;
+  return {
+    boundary: {
+      isPresent: () => present,
+      isCaretStable: () => present && stable,
+      placeCaret: () => {
+        placeCalls += 1;
+        if (!present) return false;
+        stable = true;
+        return true;
+      },
+      finish: () => {
+        finishCalls += 1;
+        if (!present) return false;
+        present = false;
+        return true;
+      },
+      cleanup: () => {
+        cleanupCalls += 1;
+        present = false;
+      },
+    },
+    destabilize: () => {
+      stable = false;
+    },
+    remove: () => {
+      present = false;
+    },
+    stats: () => ({ placeCalls, finishCalls, cleanupCalls }),
+  };
+}
+
 function htmlWithSize(kilobytes: number): string {
   const target = kilobytes * 1024;
   return `<p>${"x".repeat(Math.max(0, target - 7))}</p>`;
@@ -321,6 +358,72 @@ test("divide listas ordenadas entre itens mantendo a numeração", () => {
   );
 });
 
+test("isola listas e preserva a ordem e a hierarquia da macro de regressão", () => {
+  const document = createDocument();
+  const html = [
+    "<p>Seguiremos por estas etapas:</p>",
+    "<ol><li><strong>Validação</strong></li><li>Saque</li><li>Conclusão</li></ol>",
+    "<p>Para começar, preencha o termo.</p>",
+    '<p><a href="https://example.com/termo">Baixar termo</a></p>',
+    "<p><strong>CEDENTE:</strong></p>",
+    "<ul><li>Documento com foto</li><li>CPF e selfie</li></ul>",
+    "<p><em>CESSIONÁRIO:</em></p>",
+    "<ul><li>Documento jurídico<ul><li>Contrato Social</li><li>Certificado</li></ul></li><li>Endereço</li></ul>",
+    "<ol><li>Enviar documentos</li><li>Aguardar validação</li></ol>",
+    "<p>Depois do envio, avise aqui. &#x1F60A;</p>",
+  ].join("");
+  const prepared = prepareHubSpotHtml(html, document);
+  const listBatches = prepared.batches.filter((batch) => /<(?:ol|ul)\b/.test(batch));
+
+  assert.equal(listBatches.length, 4);
+  assert.ok(listBatches.every((batch) => !/<p\b/.test(batch)));
+  assert.match(listBatches[0], /^<ol>/);
+  assert.match(listBatches[1], /^<ul>/);
+  assert.match(listBatches[2], /^<ul>/);
+  assert.match(listBatches[3], /^<ol>/);
+  assert.doesNotMatch(listBatches[0], /start=/);
+  assert.doesNotMatch(listBatches[3], /start=/);
+
+  const reconstructed = document.createElement("div");
+  reconstructed.innerHTML = prepared.batches.join("");
+  const topLevel = Array.from(reconstructed.children);
+  assert.deepEqual(
+    topLevel.map((element) => element.tagName),
+    ["P", "OL", "P", "P", "P", "UL", "P", "UL", "OL", "P"],
+  );
+  assert.deepEqual(
+    Array.from(topLevel[1].children).map((item) => item.textContent),
+    ["Validação", "Saque", "Conclusão"],
+  );
+  assert.equal(reconstructed.querySelectorAll("li:empty").length, 0);
+  assert.equal(reconstructed.querySelectorAll("li > p").length, 0);
+  assert.equal(topLevel.at(-1)?.textContent, "Depois do envio, avise aqui. 😊");
+});
+
+test("mantém ul e ol independentes quando aparecem em sequência", () => {
+  const document = createDocument();
+  const prepared = prepareHubSpotHtml(
+    "<ul><li>Bullet</li></ul><ol><li>Número</li></ol>" +
+      "<ul><li>Outro bullet</li></ul>",
+    document,
+  );
+
+  assert.deepEqual(prepared.batches, [
+    "<ul><li>Bullet</li></ul>",
+    "<ol><li>Número</li></ol>",
+    "<ul><li>Outro bullet</li></ul>",
+  ]);
+});
+
+test("não converte Markdown literal sem evidência do formato armazenado", () => {
+  const document = createDocument();
+  const markdown = "**Negrito** e [Link](https://example.com)";
+  const prepared = prepareHubSpotHtml(markdown, document);
+
+  assert.equal(prepared.html, markdown);
+  assert.doesNotMatch(prepared.html, /<(?:strong|a)\b/);
+});
+
 test("divide parágrafo grande preservando formatação inline", () => {
   const document = createDocument();
   const prepared = prepareHubSpotHtml(
@@ -612,6 +715,7 @@ test("insere lotes em ordem, cedendo um frame e mantendo a seleção", async () 
   const inserted: string[] = [];
   let yields = 0;
   let now = 0;
+  const testBoundary = createTestBoundary();
   const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
     insertHtml: (_editor, html) => {
       inserted.push(html);
@@ -622,12 +726,18 @@ test("insere lotes em ordem, cedendo um frame e mantendo a seleção", async () 
     },
     selectionBelongs: () => true,
     now: () => (now += 2),
+    createBoundary: () => testBoundary.boundary,
   });
 
   assert.equal(result.inserted, true);
   assert.deepEqual(inserted, ["<p>A</p>", "<p>B</p>"]);
   assert.equal(yields, 1);
   assert.deepEqual(result.batchDurationsMs, [2, 2]);
+  assert.deepEqual(testBoundary.stats(), {
+    placeCalls: 3,
+    finishCalls: 1,
+    cleanupCalls: 0,
+  });
 });
 
 test("interrompe lotes quando a seleção deixa o editor", async () => {
@@ -635,6 +745,7 @@ test("interrompe lotes quando a seleção deixa o editor", async () => {
   const editor = document.createElement("div") as unknown as HTMLElement;
   let selectionChecks = 0;
   let insertions = 0;
+  const testBoundary = createTestBoundary();
   const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
     insertHtml: () => {
       insertions += 1;
@@ -645,10 +756,139 @@ test("interrompe lotes quando a seleção deixa o editor", async () => {
       selectionChecks += 1;
       return selectionChecks < 3;
     },
+    createBoundary: () => testBoundary.boundary,
   });
 
   assert.equal(result.inserted, false);
   assert.equal(insertions, 1);
+  assert.equal(testBoundary.stats().cleanupCalls, 1);
+});
+
+test("restaura a âncora quando o navegador deixa o cursor dentro do primeiro li", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const testBoundary = createTestBoundary();
+  const inserted: string[] = [];
+  const result = await insertStructuredBatches(
+    editor,
+    ["<ol><li>Primeiro</li></ol>", "<p>Depois</p>"],
+    {
+      insertHtml: (_editor, html) => {
+        inserted.push(html);
+        testBoundary.destabilize();
+        return true;
+      },
+      yieldFrame: async () => undefined,
+      selectionBelongs: () => true,
+      createBoundary: () => testBoundary.boundary,
+    },
+  );
+
+  assert.equal(result.inserted, true);
+  assert.deepEqual(inserted, ["<ol><li>Primeiro</li></ol>", "<p>Depois</p>"]);
+  assert.equal(testBoundary.stats().placeCalls, 3);
+});
+
+test("restaura a âncora quando o navegador deixa o cursor no início do bloco", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const testBoundary = createTestBoundary();
+  let insertions = 0;
+  const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
+    insertHtml: () => {
+      insertions += 1;
+      testBoundary.destabilize();
+      return true;
+    },
+    yieldFrame: async () => undefined,
+    selectionBelongs: () => true,
+    createBoundary: () => testBoundary.boundary,
+  });
+
+  assert.equal(result.inserted, true);
+  assert.equal(insertions, 2);
+  assert.equal(testBoundary.stats().placeCalls, 3);
+});
+
+test("continua os oito lotes quando o HubSpot altera o cursor entre frames", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const testBoundary = createTestBoundary();
+  const batches = Array.from({ length: 8 }, (_, index) => `<p>Lote ${index + 1}</p>`);
+  const inserted: string[] = [];
+  let now = 0;
+  const result = await insertStructuredBatches(editor, batches, {
+    insertHtml: (_editor, html) => {
+      inserted.push(html);
+      return true;
+    },
+    yieldFrame: async () => {
+      testBoundary.destabilize();
+    },
+    selectionBelongs: () => true,
+    createBoundary: () => testBoundary.boundary,
+    now: () => (now += 1),
+  });
+
+  assert.equal(result.inserted, true);
+  assert.deepEqual(inserted, batches);
+  assert.equal(result.batchDurationsMs.length, 8);
+  assert.deepEqual(result.batchDurationsMs, Array.from({ length: 8 }, () => 1));
+  assert.equal(testBoundary.stats().placeCalls, 9);
+});
+
+test("interrompe com segurança se o HubSpot remover o marcador técnico", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const testBoundary = createTestBoundary();
+  let insertions = 0;
+  const result = await insertStructuredBatches(editor, ["<p>A</p>", "<p>B</p>"], {
+    insertHtml: () => {
+      insertions += 1;
+      testBoundary.remove();
+      return true;
+    },
+    yieldFrame: async () => undefined,
+    selectionBelongs: () => true,
+    createBoundary: () => testBoundary.boundary,
+  });
+
+  assert.equal(result.inserted, false);
+  assert.equal(insertions, 1);
+  assert.equal(testBoundary.stats().finishCalls, 0);
+  assert.equal(testBoundary.stats().cleanupCalls, 1);
+});
+
+test("mantém conteúdo anterior e posterior em torno dos lotes", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const testBoundary = createTestBoundary();
+  let rendered = "ANTES|ANCHOR|DEPOIS";
+  const result = await insertStructuredBatches(
+    editor,
+    ["<ol><li>Um</li></ol>", "<p>Meio</p>", "<ul><li>Bullet</li></ul>"],
+    {
+      insertHtml: (_editor, html) => {
+        rendered = rendered.replace("ANCHOR", `${html}ANCHOR`);
+        return true;
+      },
+      yieldFrame: async () => undefined,
+      selectionBelongs: () => true,
+      createBoundary: () => ({
+        ...testBoundary.boundary,
+        finish: () => {
+          rendered = rendered.replace("ANCHOR", "");
+          return testBoundary.boundary.finish();
+        },
+      }),
+    },
+  );
+
+  assert.equal(result.inserted, true);
+  assert.equal(
+    rendered,
+    "ANTES|<ol><li>Um</li></ol><p>Meio</p><ul><li>Bullet</li></ul>|DEPOIS",
+  );
 });
 
 test("rejeita mais de 100 lotes antes da primeira inserção", async () => {
