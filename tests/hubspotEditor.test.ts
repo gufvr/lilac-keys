@@ -573,7 +573,7 @@ test("não converte Markdown literal sem evidência do formato armazenado", () =
   const markdown = "**Negrito** e [Link](https://example.com)";
   const prepared = prepareHubSpotHtml(markdown, document);
 
-  assert.equal(prepared.html, markdown);
+  assert.equal(prepared.html, `<p>${markdown}</p>`);
   assert.doesNotMatch(prepared.html, /<(?:strong|a)\b/);
 });
 
@@ -1147,4 +1147,48 @@ test("normaliza blocos div sem achatar parágrafos e listas", () => {
   assert.doesNotMatch(prepared.html, /<div\b/i);
   assert.match(prepared.html, /<\/p><ul><li>/);
   assert.match(prepared.html, /<\/ul><p>Mensagem posterior/);
+});
+
+test("normaliza macros legadas com texto e conteúdo inline soltos", () => {
+  const document = createDocument();
+  const plain = prepareHubSpotHtml(
+    "Primeira linha\n\nSegunda linha com %CAMPO%",
+    document,
+  );
+  const inline = prepareHubSpotHtml(
+    '<strong>Início</strong><br><a href="https://example.com">Link</a>',
+    document,
+  );
+
+  assert.equal(
+    plain.html,
+    '<p>Primeira linha<br><br>Segunda linha com ' +
+      '<span data-lilackeys-placeholder="true">%CAMPO%</span></p>',
+  );
+  assert.equal(
+    inline.html,
+    '<p><strong>Início</strong><br><a href="https://example.com">Link</a></p>',
+  );
+});
+
+test("preserva macros existentes baseadas em parágrafos", () => {
+  const document = createDocument();
+  const html =
+    '<p>Transferência registrada com sucesso.</p><p><br></p>' +
+    '<p>Disponível até %dia_semana% (%dataMes%).</p><p><br></p>' +
+    '<p>Acesse o <a href="https://example.com"><strong>perfil</strong></a>.</p>' +
+    '<p>Qualquer dúvida, sigo à disposição! 💙</p>';
+
+  const prepared = prepareHubSpotHtml(html, document);
+  const container = document.createElement("div");
+  container.innerHTML = prepared.html;
+
+  assert.equal(container.querySelectorAll("p").length, 6);
+  assert.equal(container.querySelectorAll("p > br").length, 2);
+  assert.equal(container.querySelectorAll("a strong").length, 1);
+  assert.equal(
+    container.querySelectorAll("[data-lilackeys-placeholder]").length,
+    2,
+  );
+  assert.doesNotMatch(prepared.html, /<div\b/i);
 });

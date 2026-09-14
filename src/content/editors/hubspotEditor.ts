@@ -335,6 +335,52 @@ function normalizeHubSpotBlockStructure(
     paragraph.append(...Array.from(element.childNodes));
     element.replaceWith(paragraph);
   }
+
+  normalizeTopLevelInlineContent(root, ownerDocument);
+}
+
+function normalizeTopLevelInlineContent(
+  root: HTMLElement,
+  ownerDocument: Document,
+): void {
+  let paragraph: HTMLElement | null = null;
+  const blockTag = /^(BLOCKQUOTE|H[1-6]|IMG|OL|P|PRE|UL)$/;
+
+  Array.from(root.childNodes).forEach((node) => {
+    if (node.nodeType === 1 && blockTag.test((node as Element).tagName)) {
+      paragraph = null;
+      return;
+    }
+    if (node.nodeType === 8) {
+      node.remove();
+      return;
+    }
+    if (node.nodeType === 3 && !(node.textContent ?? "").trim() && !paragraph) {
+      node.remove();
+      return;
+    }
+    if (!paragraph) {
+      paragraph = ownerDocument.createElement("p");
+      root.insertBefore(paragraph, node);
+    }
+    paragraph.append(node);
+    if (node.nodeType === 3 && /\r|\n/.test(node.textContent ?? "")) {
+      replaceTextNewlinesWithBreaks(node as Text, ownerDocument);
+    }
+  });
+}
+
+function replaceTextNewlinesWithBreaks(
+  textNode: Text,
+  ownerDocument: Document,
+): void {
+  const parts = textNode.data.replace(/\r\n?/g, "\n").split("\n");
+  const fragment = ownerDocument.createDocumentFragment();
+  parts.forEach((part, index) => {
+    if (index > 0) fragment.append(ownerDocument.createElement("br"));
+    if (part) fragment.append(ownerDocument.createTextNode(part));
+  });
+  textNode.replaceWith(fragment);
 }
 
 export function htmlToHubSpotPlainText(
