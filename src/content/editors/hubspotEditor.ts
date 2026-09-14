@@ -295,6 +295,7 @@ export function prepareHubSpotHtml(
   const container = ownerDocument.createElement("div");
   container.innerHTML = preSanitizedImages.html;
   const imageStats = sanitizeElements(container, ownerDocument);
+  normalizeHubSpotBlockStructure(container, ownerDocument);
   addPlaceholderMarkers(container, ownerDocument);
   const sanitizedHtml = container.innerHTML;
   return {
@@ -304,6 +305,36 @@ export function prepareHubSpotHtml(
     rejectedImages:
       imageStats.rejectedImages + preSanitizedImages.removedImages,
   };
+}
+
+function normalizeHubSpotBlockStructure(
+  root: HTMLElement,
+  ownerDocument: Document,
+): void {
+  const pending = Array.from(root.children).filter(
+    (element) => element.tagName === "DIV",
+  );
+
+  while (pending.length > 0) {
+    const element = pending.shift();
+    if (!element?.parentNode || element.parentNode !== root) continue;
+    const containsBlock = Array.from(element.children).some((child) =>
+      /^(BLOCKQUOTE|DIV|H[1-6]|OL|P|PRE|UL)$/.test(child.tagName),
+    );
+
+    if (containsBlock) {
+      const promotedDivs = Array.from(element.children).filter(
+        (child) => child.tagName === "DIV",
+      );
+      element.replaceWith(...Array.from(element.childNodes));
+      pending.push(...promotedDivs);
+      continue;
+    }
+
+    const paragraph = ownerDocument.createElement("p");
+    paragraph.append(...Array.from(element.childNodes));
+    element.replaceWith(paragraph);
+  }
 }
 
 export function htmlToHubSpotPlainText(

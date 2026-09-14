@@ -1122,3 +1122,29 @@ test("bloqueia duas expansões concorrentes no mesmo editor", async () => {
     "next",
   );
 });
+
+test("normaliza blocos div sem achatar parágrafos e listas", () => {
+  const document = createDocument();
+  const html = [
+    "<div>Notícia inicial.</div>",
+    "<div><br></div>",
+    "<div>Valores disponíveis:</div>",
+    "<div>%Print_Extrato%</div>",
+    "<div>O fluxo será este:</div>",
+    "<div><ul><li>Solicite o saque.</li><li>Avise por aqui.</li></ul></div>",
+    "<div>Mensagem posterior.</div>",
+  ].join("");
+
+  const prepared = prepareHubSpotHtml(html, document);
+
+  assert.equal(
+    prepared.html,
+    '<p>Notícia inicial.</p><p><br></p><p>Valores disponíveis:</p>' +
+      '<p><span data-lilackeys-placeholder="true">%Print_Extrato%</span></p>' +
+      '<p>O fluxo será este:</p><ul><li>Solicite o saque.</li>' +
+      '<li>Avise por aqui.</li></ul><p>Mensagem posterior.</p>',
+  );
+  assert.doesNotMatch(prepared.html, /<div\b/i);
+  assert.match(prepared.html, /<\/p><ul><li>/);
+  assert.match(prepared.html, /<\/ul><p>Mensagem posterior/);
+});
