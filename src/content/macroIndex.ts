@@ -3,12 +3,17 @@ import {
   classifyHubSpotPayload,
   type HubSpotPayloadPlan,
 } from "./hubspotPolicy.ts";
+import {
+  collapseEmbeddedImagesForClassification,
+  sanitizeMacroImages,
+} from "./hubspotImages.ts";
 
 export interface IndexedMacro {
   macro: Macro;
   normalizedShortcut: string;
   shortcutLength: number;
   hubspotPlan: HubSpotPayloadPlan;
+  hubspotHtml: string;
 }
 
 export interface MacroSnapshot {
@@ -21,11 +26,15 @@ export function buildMacroSnapshot(macros: Macro[]): MacroSnapshot {
   const entries = macros
     .map((macro) => {
       const normalizedShortcut = macro.atalho.trim().toLowerCase();
+      const hubspotHtml = sanitizeMacroImages(macro.textoExpandido).html;
+      const classificationHtml =
+        collapseEmbeddedImagesForClassification(hubspotHtml);
       return {
         macro,
         normalizedShortcut,
         shortcutLength: normalizedShortcut.length,
-        hubspotPlan: classifyHubSpotPayload(macro.textoExpandido),
+        hubspotPlan: classifyHubSpotPayload(classificationHtml),
+        hubspotHtml,
       };
     })
     .filter((entry) => entry.shortcutLength > 0)

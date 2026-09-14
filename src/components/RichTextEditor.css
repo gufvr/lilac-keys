@@ -37,6 +37,13 @@
   font-size: 1.125rem;
 }
 
+.rich-text-image-warning {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
 .rich-text-content {
   min-height: 10rem;
   padding: 0.75rem;
@@ -62,6 +69,13 @@
 .rich-text-content a {
   color: var(--color-primary);
   text-decoration: underline;
+}
+
+.rich-text-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem 0;
 }
 
 .rich-text-content ul,

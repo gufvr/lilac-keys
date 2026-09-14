@@ -1,12 +1,12 @@
 {
   "name": "lilac-keys",
   "private": true,
-  "version": "1.1.7",
+  "version": "1.1.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node --experimental-strip-types --test tests/whatsappEditor.test.ts tests/macroStorage.test.ts tests/macroCache.test.ts tests/hubspotEditor.test.ts",
+    "test": "node --experimental-strip-types --test tests/macroStorage.test.ts tests/macroCache.test.ts tests/hubspotEditor.test.ts",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },

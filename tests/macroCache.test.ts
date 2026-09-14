@@ -97,3 +97,40 @@ test("recalcula o plano do HubSpot ao receber mudança do storage", () => {
 
   assert.equal(cache.current?.entries[0].hubspotPlan.strategy, "structured");
 });
+
+test("preserva base64 segura sem deixar o payload bloquear o plano do HubSpot", () => {
+  const embeddedImage = `data:image/png;base64,${"A".repeat(150 * 1024)}`;
+  const snapshot = buildMacroSnapshot([
+    {
+      id: "with-image",
+      nome: "Com imagem antiga",
+      atalho: "/imagem",
+      textoExpandido:
+        `<p>Texto preservado</p><img src="${embeddedImage}" alt="Antiga">` +
+        '<img src="https://cdn.example.com/nova.png" alt="Nova">',
+    },
+  ]);
+  const entry = snapshot.entries[0];
+
+  assert.notEqual(entry.hubspotPlan.strategy, "blocked");
+  assert.match(entry.hubspotHtml, /data:image\/png;base64/);
+  assert.match(entry.hubspotHtml, /<p>Texto preservado<\/p>/);
+  assert.match(entry.hubspotHtml, /https:\/\/cdn\.example\.com\/nova\.png/);
+});
+
+test("remove base64 individual acima do limite antes de classificar", () => {
+  const embeddedImage = `data:image/png;base64,${"A".repeat(700 * 1024)}`;
+  const snapshot = buildMacroSnapshot([
+    {
+      id: "oversized-image",
+      nome: "Imagem excessiva",
+      atalho: "/grande",
+      textoExpandido: `<p>Texto preservado</p><img src="${embeddedImage}">`,
+    },
+  ]);
+  const entry = snapshot.entries[0];
+
+  assert.doesNotMatch(entry.hubspotHtml, /data:image/);
+  assert.match(entry.hubspotHtml, /Texto preservado/);
+  assert.notEqual(entry.hubspotPlan.strategy, "blocked");
+});

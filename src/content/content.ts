@@ -1,10 +1,4 @@
 import {
-  expandWhatsAppMacro,
-  findWhatsAppMessageComposer,
-  insertWhatsAppSpace,
-  isWhatsAppWebPage,
-} from "./editors/whatsappEditor";
-import {
   expandHubSpotMacro,
   findHubSpotEditor,
   handleHubSpotPlaceholderTab,
@@ -17,13 +11,18 @@ const PLACEHOLDER_PATTERN = /%[^%\r\n]+%/g;
 const macroCache = createChromeMacroCache();
 let isExpandingMacro = false;
 
+type SupportedEditable =
+  | HTMLInputElement
+  | HTMLTextAreaElement
+  | HTMLElement;
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Tab") {
     if (isHubSpotPage()) {
       const hubspotEditor = findHubSpotEditor({
         eventTarget: e.target,
         eventPath: e.composedPath(),
-        activeElement: document.activeElement,
+        activeElement: getDeepActiveElement(),
         selection: window.getSelection(),
       });
       if (hubspotEditor) {
@@ -39,33 +38,32 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key !== " " || !e.shiftKey) return;
 
-  const whatsappComposer = findWhatsAppMessageComposer({
-    eventTarget: e.target,
-    eventPath: e.composedPath(),
-    activeElement: document.activeElement,
-    selection: window.getSelection(),
-  });
   const hubspotEditor = findHubSpotEditor({
     eventTarget: e.target,
     eventPath: e.composedPath(),
-    activeElement: document.activeElement,
+    activeElement: getDeepActiveElement(),
     selection: window.getSelection(),
   });
-  if (isWhatsAppWebPage() && !whatsappComposer) return;
-  if (
-    !whatsappComposer &&
-    !hubspotEditor &&
-    !isSupportedEditable(document.activeElement)
-  ) {
+  const editable = findSupportedEditable([
+    e.target,
+    ...e.composedPath(),
+    getDeepActiveElement(),
+  ]);
+  if (!hubspotEditor && !editable) {
+    if (isHubSpotPage()) {
+      console.warn("LilacKeys: editor do HubSpot não identificado", {
+        host: window.location.hostname,
+      });
+    }
     return;
   }
-  if ((whatsappComposer || hubspotEditor) && (e.repeat || e.isComposing)) {
+  if (hubspotEditor && (e.repeat || e.isComposing)) {
     e.preventDefault();
     e.stopPropagation();
     return;
   }
   if (isExpandingMacro) {
-    if (whatsappComposer || hubspotEditor) {
+    if (hubspotEditor) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -74,7 +72,7 @@ document.addEventListener("keydown", (e) => {
 
   e.preventDefault();
   e.stopPropagation();
-  void handleKeydown(e, whatsappComposer, hubspotEditor).catch(
+  void handleKeydown(e, hubspotEditor, editable).catch(
     (error: unknown) => {
       if (isExtensionContextInvalidated(error)) return;
       console.error("LilacKeys: erro ao processar atalho", error);
@@ -84,24 +82,22 @@ document.addEventListener("keydown", (e) => {
 
 async function handleKeydown(
   e: KeyboardEvent,
-  initialWhatsAppComposer: HTMLElement | null,
   initialHubSpotEditor: HTMLElement | null,
+  initialEditable: SupportedEditable | null,
 ): Promise<void> {
   if (!(e.key === " " && e.shiftKey)) return;
 
   if (isExpandingMacro) return;
   isExpandingMacro = true;
   try {
-    const el = document.activeElement;
-    const whatsappComposer = initialWhatsAppComposer;
     const hubspotEditor = initialHubSpotEditor;
-    if (isWhatsAppWebPage() && !whatsappComposer) return;
     const isPlainTextField =
-      el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
-    const isRichTextField = el instanceof HTMLElement && el.isContentEditable;
+      initialEditable instanceof HTMLInputElement ||
+      initialEditable instanceof HTMLTextAreaElement;
+    const isRichTextField =
+      initialEditable instanceof HTMLElement && initialEditable.isContentEditable;
 
     if (
-      !whatsappComposer &&
       !hubspotEditor &&
       !isPlainTextField &&
       !isRichTextField
@@ -109,32 +105,20 @@ async function handleKeydown(
       return;
     }
 
-    const plainTextElement = isPlainTextField ? el : null;
-    const richTextElement = isRichTextField ? el : null;
+    const plainTextElement = isPlainTextField ? initialEditable : null;
+    const richTextElement = isRichTextField ? initialEditable : null;
     const snapshot = await macroCache.getSnapshot();
     if (!snapshot) {
-      if (whatsappComposer) {
-        insertWhatsAppSpace(whatsappComposer);
-        return;
+      if (hubspotEditor || isHubSpotPage()) {
+        console.warn("LilacKeys: cache de macros indisponível no HubSpot", {
+          host: window.location.hostname || "related-frame",
+        });
       }
       insertSpace(
         plainTextElement,
         richTextElement,
         plainTextElement?.selectionStart ?? 0,
       );
-      return;
-    }
-    if (whatsappComposer) {
-      const result = expandWhatsAppMacro(
-        whatsappComposer,
-        snapshot.macros,
-        htmlToText,
-      );
-      if (result === "failed") {
-        console.warn(
-          "LilacKeys: não foi possível atualizar o compositor do WhatsApp.",
-        );
-      }
       return;
     }
     if (hubspotEditor) {
@@ -167,12 +151,49 @@ async function handleKeydown(
 
 function isSupportedEditable(
   element: Element | null,
-): element is HTMLInputElement | HTMLTextAreaElement | HTMLElement {
+): element is SupportedEditable {
   return (
     element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement ||
     (element instanceof HTMLElement && element.isContentEditable)
   );
+}
+
+function findSupportedEditable(
+  sources: readonly (EventTarget | null)[],
+): SupportedEditable | null {
+  const seen = new Set<Element>();
+  for (const source of sources) {
+    let element = getSourceElement(source);
+    while (element && !seen.has(element)) {
+      seen.add(element);
+      if (isSupportedEditable(element)) return element;
+      if (element.parentElement) {
+        element = element.parentElement;
+        continue;
+      }
+      const root = element.getRootNode();
+      element =
+        typeof ShadowRoot !== "undefined" && root instanceof ShadowRoot
+          ? root.host
+          : null;
+    }
+  }
+  return null;
+}
+
+function getSourceElement(source: EventTarget | null): Element | null {
+  if (source instanceof Element) return source;
+  const node = source as Node | null;
+  return node?.nodeType === Node.TEXT_NODE ? node.parentElement : null;
+}
+
+function getDeepActiveElement(): Element | null {
+  let active = document.activeElement;
+  while (active instanceof HTMLElement && active.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  return active;
 }
 
 function expandMacro(

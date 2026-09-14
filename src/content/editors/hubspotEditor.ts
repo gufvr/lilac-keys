@@ -1,5 +1,11 @@
 import { findIndexedMacro, type MacroSnapshot } from "../macroIndex.ts";
 import type { HubSpotPayloadPlan } from "../hubspotPolicy.ts";
+import {
+  classifyMacroImageSource,
+  MAX_EMBEDDED_IMAGE_BYTES,
+  MAX_MACRO_IMAGES,
+  sanitizeMacroImages,
+} from "../hubspotImages.ts";
 
 export { classifyHubSpotPayload } from "../hubspotPolicy.ts";
 export type {
@@ -10,9 +16,12 @@ const PLACEHOLDER_PATTERN = /%[^%\r\n]+%/g;
 const SHOW_TEXT = 4;
 const STRUCTURED_BATCH_MAX_CHARACTERS = 8 * 1024;
 const STRUCTURED_BATCH_MAX_ELEMENTS = 30;
+const STRUCTURED_ATOMIC_MAX_CHARACTERS = 4 * 1024;
+const STRUCTURED_ATOMIC_MAX_ELEMENTS = 90;
 const STRUCTURED_MAX_BATCHES = 100;
-const MAX_SAFE_IMAGES = 3;
-const MAX_IMAGE_URL_LENGTH = 2048;
+const MAX_SAFE_IMAGES = MAX_MACRO_IMAGES;
+const MAX_EMBEDDED_IMAGE_HTML_CHARACTERS =
+  Math.ceil((MAX_EMBEDDED_IMAGE_BYTES * 4) / 3) + 4096;
 const MAX_IMAGE_DIMENSION = 1600;
 const PLACEHOLDER_SEARCH_MAX_NODES = 200;
 const PLACEHOLDER_SEARCH_MAX_CHARACTERS = 64 * 1024;
@@ -87,24 +96,56 @@ export interface StructuredInsertionResult {
     | "boundary-creation-failed"
     | "marker-missing-or-duplicated"
     | "caret-restore-failed"
+    | "list-exit-failed"
     | "batch-insertion-failed";
 }
 
 export function isHubSpotPage(
-  hostname = window.location.hostname,
+  hostname?: string,
+  relatedOrigins?: readonly string[],
 ): boolean {
+  const resolvedHostname =
+    hostname ??
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  if (isHubSpotHostname(resolvedHostname)) return true;
+  const origins =
+    relatedOrigins ?? (hostname === undefined ? getRuntimeRelatedOrigins() : []);
+  return origins.some((origin) => {
+    try {
+      return isHubSpotHostname(new URL(origin).hostname);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function isHubSpotHostname(hostname: string): boolean {
   const normalizedHostname = hostname.toLowerCase();
   return (
     normalizedHostname === "hubspot.com" ||
-    normalizedHostname.endsWith(".hubspot.com")
+    normalizedHostname.endsWith(".hubspot.com") ||
+    normalizedHostname === "hsappstatic.net" ||
+    normalizedHostname.endsWith(".hsappstatic.net")
   );
+}
+
+function getRuntimeRelatedOrigins(): string[] {
+  const origins: string[] = [];
+  if (typeof document !== "undefined" && document.referrer) {
+    origins.push(document.referrer);
+  }
+  if (typeof location !== "undefined" && location.ancestorOrigins) {
+    for (let index = 0; index < location.ancestorOrigins.length; index += 1) {
+      origins.push(location.ancestorOrigins[index]);
+    }
+  }
+  return origins;
 }
 
 export function findHubSpotEditor(
   lookup: HubSpotEditorLookup,
 ): HTMLElement | null {
-  const hostname = lookup.hostname ?? window.location.hostname;
-  if (!isHubSpotPage(hostname)) return null;
+  if (!isHubSpotPage(lookup.hostname)) return null;
 
   const sources = [
     lookup.eventTarget,
@@ -118,7 +159,15 @@ export function findHubSpotEditor(
     seen.add(editor);
     if (isExcludedField(editor)) continue;
     const anchorNode = lookup.selection?.anchorNode;
-    if (anchorNode && editor.contains(anchorNode)) return editor;
+    const focusNode = lookup.selection?.focusNode ?? anchorNode;
+    if (
+      anchorNode &&
+      focusNode &&
+      editor.contains(anchorNode) &&
+      editor.contains(focusNode)
+    ) {
+      return editor;
+    }
   }
   return null;
 }
@@ -158,6 +207,10 @@ async function performHubSpotExpansion(
   );
   const match = findIndexedMacro(snapshot, valueBeforeCursor);
   if (!match) {
+    console.warn("LilacKeys: atalho não encontrado no cache do HubSpot", {
+      cachedMacros: snapshot.entries.length,
+      host: window.location.hostname || "related-frame",
+    });
     return insertTextAtSelection(editor, " ") ? "no-match" : "failed";
   }
 
@@ -176,7 +229,7 @@ async function performHubSpotExpansion(
 
   if (plan.strategy === "structured") await yieldToBrowser();
   const preparationStartedAt = performance.now();
-  const prepared = prepareHubSpotHtml(match.macro.textoExpandido);
+  const prepared = prepareHubSpotHtml(match.hubspotHtml);
   const preparationMs = performance.now() - preparationStartedAt;
   if (
     prepared.batches.length === 0 ||
@@ -193,7 +246,7 @@ async function performHubSpotExpansion(
   }
 
   const insertion =
-    plan.strategy === "rich"
+    shouldInsertHubSpotAtomically(editor, plan.strategy)
       ? insertSingleRichBatch(editor, prepared.html)
       : await insertStructuredBatches(editor, prepared.batches);
   logHubSpotPerformance(
@@ -211,6 +264,22 @@ async function performHubSpotExpansion(
   return insertion.inserted ? "expanded" : "failed";
 }
 
+export function isRemirrorEditor(editor: HTMLElement): boolean {
+  return (
+    editor.classList.contains("ProseMirror") ||
+    editor.matches(
+      '.remirror-editor, [data-remirror-editor], [data-remirror-root], [data-remirror-content]',
+    )
+  );
+}
+
+export function shouldInsertHubSpotAtomically(
+  editor: HTMLElement,
+  strategy: HubSpotPayloadPlan["strategy"],
+): boolean {
+  return strategy === "rich" || isRemirrorEditor(editor);
+}
+
 export function sanitizeHubSpotHtml(
   html: string,
   ownerDocument: Document = document,
@@ -222,15 +291,18 @@ export function prepareHubSpotHtml(
   html: string,
   ownerDocument: Document = document,
 ): PreparedHubSpotHtml {
+  const preSanitizedImages = sanitizeMacroImages(html);
   const container = ownerDocument.createElement("div");
-  container.innerHTML = html;
+  container.innerHTML = preSanitizedImages.html;
   const imageStats = sanitizeElements(container, ownerDocument);
   addPlaceholderMarkers(container, ownerDocument);
   const sanitizedHtml = container.innerHTML;
   return {
     html: sanitizedHtml,
     batches: createStructuredBatches(container, ownerDocument),
-    ...imageStats,
+    acceptedImages: imageStats.acceptedImages,
+    rejectedImages:
+      imageStats.rejectedImages + preSanitizedImages.removedImages,
   };
 }
 
@@ -249,26 +321,58 @@ export function htmlToHubSpotPlainText(
 }
 
 function findEditingHost(source: EventTarget | null): HTMLElement | null {
-  if (!(source instanceof HTMLElement)) return null;
-  let element: HTMLElement | null = source;
+  let element = getEventSourceElement(source);
+  const visited = new Set<HTMLElement>();
   while (element) {
-    const editable = element.getAttribute("contenteditable")?.toLowerCase();
-    if (
-      editable === "true" ||
-      editable === "plaintext-only" ||
-      (element.isContentEditable && element.getAttribute("role") === "textbox")
-    ) {
-      return element;
+    if (visited.has(element)) return null;
+    visited.add(element);
+    if (isHubSpotEditingHost(element)) return element;
+    if (element.parentElement) {
+      element = element.parentElement;
+      continue;
     }
-    element = element.parentElement;
+    const root = element.getRootNode();
+    element =
+      typeof ShadowRoot !== "undefined" && root instanceof ShadowRoot
+        ? (root.host as HTMLElement)
+        : null;
   }
   return null;
 }
 
+function getEventSourceElement(source: EventTarget | null): HTMLElement | null {
+  if (source instanceof HTMLElement) return source;
+  const possibleNode = source as Node | null;
+  return possibleNode?.nodeType === 3
+    ? (possibleNode.parentElement as HTMLElement | null)
+    : null;
+}
+
+function isHubSpotEditingHost(element: HTMLElement): boolean {
+  const editable = element.getAttribute("contenteditable")?.toLowerCase();
+  const explicitlyEditable =
+    editable === "" || editable === "true" || editable === "plaintext-only";
+  const semanticallyEditable =
+    element.getAttribute("role") === "textbox" ||
+    element.getAttribute("data-slate-editor") === "true" ||
+    element.getAttribute("data-lexical-editor") === "true" ||
+    element.classList.contains("ProseMirror") ||
+    element.classList.contains("tiptap");
+  return explicitlyEditable || element.isContentEditable || semanticallyEditable;
+}
+
 function isExcludedField(editor: HTMLElement): boolean {
+  const label = `${editor.getAttribute("aria-label") ?? ""} ${
+    editor.getAttribute("data-placeholder") ?? ""
+  }`.toLowerCase();
   return (
     editor.getAttribute("role") === "searchbox" ||
-    Boolean(editor.closest('[role="search"], header, nav, [role="navigation"]'))
+    /\b(search|buscar|busca|pesquisar|pesquisa)\b/i.test(label) ||
+    Boolean(
+      editor.closest(
+        '[role="search"], header, nav, [role="navigation"], [data-test-id*="search" i], [data-testid*="search" i], [data-selenium-test*="search" i], [data-test-id*="caption" i], [data-testid*="caption" i]',
+      ),
+    )
   );
 }
 
@@ -321,15 +425,14 @@ function isSafeLink(href: string): boolean {
 
 function sanitizeImage(element: Element, acceptedImages: number): boolean {
   const src = element.getAttribute("src")?.trim() ?? "";
+  const imageSource = classifyMacroImageSource(src);
   const width = normalizeDimension(element.getAttribute("width"));
   const height = normalizeDimension(element.getAttribute("height"));
   const isTrackingPixel =
     (width !== null && width <= 1) || (height !== null && height <= 1);
   if (
     acceptedImages >= MAX_SAFE_IMAGES ||
-    src.length === 0 ||
-    src.length > MAX_IMAGE_URL_LENGTH ||
-    !isSafeHttpsImageUrl(src) ||
+    !imageSource ||
     isTrackingPixel
   ) {
     return false;
@@ -339,20 +442,11 @@ function sanitizeImage(element: Element, acceptedImages: number): boolean {
   Array.from(element.attributes).forEach((attribute) => {
     element.removeAttribute(attribute.name);
   });
-  element.setAttribute("src", src);
+  element.setAttribute("src", imageSource.source);
   if (alt) element.setAttribute("alt", alt);
   if (width !== null) element.setAttribute("width", String(width));
   if (height !== null) element.setAttribute("height", String(height));
   return true;
-}
-
-function isSafeHttpsImageUrl(src: string): boolean {
-  try {
-    const url = new URL(src);
-    return url.protocol === "https:" && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
 }
 
 function normalizeDimension(value: string | null): number | null {
@@ -369,6 +463,14 @@ function createStructuredBatches(
   root: HTMLElement,
   ownerDocument: Document,
 ): string[] {
+  const completeHtml = root.innerHTML;
+  const completeElements = Math.max(0, countElements(root) - 1);
+  if (
+    completeHtml.length <= STRUCTURED_ATOMIC_MAX_CHARACTERS &&
+    completeElements <= STRUCTURED_ATOMIC_MAX_ELEMENTS
+  ) {
+    return completeHtml ? [completeHtml] : [];
+  }
   const units = Array.from(root.childNodes).flatMap((node) =>
     createSemanticUnits(node, ownerDocument),
   );
@@ -419,6 +521,9 @@ function createSemanticUnits(
     return splitSerializedText(node.textContent ?? "", ownerDocument, maximumCharacters);
   }
   const element = node as Element;
+  if (element.tagName === "IMG") {
+    return [{ html: element.outerHTML, elements: 1, isolated: true }];
+  }
   if ((element.tagName === "OL" || element.tagName === "UL") && element.children.length) {
     return splitList(element, maximumCharacters, maximumElements);
   }
@@ -884,6 +989,7 @@ function insertSingleRichBatch(
 interface StructuredInsertionOptions {
   insertHtml?: (editor: HTMLElement, html: string) => boolean;
   createBoundary?: (editor: HTMLElement) => InsertionBoundary | null;
+  ensureOutsideList?: (editor: HTMLElement) => boolean;
   yieldFrame?: () => Promise<void>;
   selectionBelongs?: (editor: HTMLElement) => boolean;
   now?: () => number;
@@ -904,17 +1010,30 @@ export async function insertStructuredBatches(
   const insertHtml = options.insertHtml ?? insertHtmlAtSelection;
   const createBoundary =
     options.createBoundary ?? createHubSpotInsertionBoundary;
+  const ensureOutsideList =
+    options.ensureOutsideList ?? ensureHubSpotSelectionOutsideList;
   const yieldFrame = options.yieldFrame ?? yieldToBrowser;
   const selectionBelongs = options.selectionBelongs ?? selectionBelongsToEditor;
   const now = options.now ?? (() => performance.now());
   const valid =
     batches.length > 0 &&
     batches.length <= STRUCTURED_MAX_BATCHES &&
-    batches.every(
-      (batch) =>
-        batch.length <= STRUCTURED_BATCH_MAX_CHARACTERS &&
-        estimateBatchElements(batch) <= STRUCTURED_BATCH_MAX_ELEMENTS,
-    );
+    batches.every((batch) => {
+      const elements = estimateBatchElements(batch);
+      const embeddedImageBatch =
+        batch.length <= MAX_EMBEDDED_IMAGE_HTML_CHARACTERS &&
+        /<img\b[^>]*\bsrc=["']data:image\//i.test(batch);
+      const atomicStructuredBatch =
+        batches.length === 1 &&
+        batch.length <= STRUCTURED_ATOMIC_MAX_CHARACTERS &&
+        elements <= STRUCTURED_ATOMIC_MAX_ELEMENTS;
+      return (
+        embeddedImageBatch ||
+        atomicStructuredBatch ||
+        (batch.length <= STRUCTURED_BATCH_MAX_CHARACTERS &&
+          elements <= STRUCTURED_BATCH_MAX_ELEMENTS)
+      );
+    });
   if (!valid || !selectionBelongs(editor)) {
     return {
       inserted: false,
@@ -935,15 +1054,9 @@ export async function insertStructuredBatches(
 
   const batchDurationsMs: number[] = [];
   let completed = false;
+  let boundaryActive = true;
   try {
     for (let index = 0; index < batches.length; index += 1) {
-      if (!boundary.isPresent()) {
-        return {
-          inserted: false,
-          batchDurationsMs,
-          failureReason: "marker-missing-or-duplicated",
-        };
-      }
       if (!selectionBelongs(editor)) {
         return {
           inserted: false,
@@ -951,12 +1064,15 @@ export async function insertStructuredBatches(
           failureReason: "selection-left-editor",
         };
       }
-      if (!boundary.placeCaret()) {
+      if (boundaryActive && boundary.isPresent() && !boundary.placeCaret()) {
         return {
           inserted: false,
           batchDurationsMs,
           failureReason: "caret-restore-failed",
         };
+      }
+      if (boundaryActive && !boundary.isPresent()) {
+        boundaryActive = false;
       }
       const startedAt = now();
       if (!insertHtml(editor, batches[index])) {
@@ -967,12 +1083,8 @@ export async function insertStructuredBatches(
         };
       }
       batchDurationsMs.push(now() - startedAt);
-      if (!boundary.isPresent()) {
-        return {
-          inserted: false,
-          batchDurationsMs,
-          failureReason: "marker-missing-or-duplicated",
-        };
+      if (boundaryActive && !boundary.isPresent()) {
+        boundaryActive = false;
       }
       if (!selectionBelongs(editor)) {
         return {
@@ -981,11 +1093,18 @@ export async function insertStructuredBatches(
           failureReason: "selection-left-editor",
         };
       }
+      if (!boundaryActive && !ensureOutsideList(editor)) {
+        return {
+          inserted: false,
+          batchDurationsMs,
+          failureReason: "list-exit-failed",
+        };
+      }
       if (index < batches.length - 1) {
         await yieldFrame();
       }
     }
-    completed = boundary.finish();
+    completed = boundaryActive ? boundary.finish() : true;
     return completed
       ? { inserted: true, batchDurationsMs }
       : {
@@ -994,7 +1113,7 @@ export async function insertStructuredBatches(
           failureReason: "caret-restore-failed",
         };
   } finally {
-    if (!completed) boundary.cleanup();
+    if (!completed || !boundaryActive) boundary.cleanup();
   }
 }
 
@@ -1064,6 +1183,54 @@ function createHubSpotInsertionBoundary(
 
 function createBoundaryToken(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+interface ListExitDependencies {
+  getSelection?: () => Selection | null;
+  insertParagraph?: () => boolean;
+  outdent?: () => boolean;
+}
+
+export function ensureHubSpotSelectionOutsideList(
+  editor: HTMLElement,
+  dependencies: ListExitDependencies = {},
+): boolean {
+  const ownerDocument = editor.ownerDocument;
+  const getSelection =
+    dependencies.getSelection ??
+    (() => ownerDocument.defaultView?.getSelection() ?? null);
+  const insertParagraph =
+    dependencies.insertParagraph ??
+    (() => ownerDocument.execCommand("insertParagraph", false));
+  const outdent =
+    dependencies.outdent ?? (() => ownerDocument.execCommand("outdent", false));
+  let exitedList = false;
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const selection = getSelection();
+    const anchor = selection?.anchorNode;
+    if (!selection?.isCollapsed || !anchor || !editor.contains(anchor)) {
+      return false;
+    }
+    const element =
+      anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
+    if (!element?.closest("ol, ul, li")) {
+      if (exitedList) outdent();
+      return true;
+    }
+    exitedList = true;
+    insertParagraph();
+  }
+
+  const selection = getSelection();
+  const anchor = selection?.anchorNode;
+  if (!selection?.isCollapsed || !anchor || !editor.contains(anchor)) {
+    return false;
+  }
+  const element = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
+  const outsideList = !element?.closest("ol, ul, li");
+  if (outsideList && exitedList) outdent();
+  return outsideList;
 }
 
 function selectionBelongsToEditor(editor: HTMLElement): boolean {

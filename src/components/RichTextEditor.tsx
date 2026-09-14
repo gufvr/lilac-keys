@@ -1,4 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  isSupportedImageFile,
+  MAX_EMBEDDED_IMAGE_BYTES,
+  MAX_MACRO_IMAGES,
+  sanitizeMacroImages,
+} from "../utils/macroImages";
 import "./RichTextEditor.css";
 
 interface RichTextEditorProps {
@@ -55,6 +61,9 @@ const commands: EditorCommand[] = [
 
 export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const savedSelectionRef = useRef<Range | null>(null);
+  const [imageWarning, setImageWarning] = useState<string>();
 
   useEffect(() => {
     if (editorRef.current && editorRef.current.innerHTML !== value) {
@@ -62,10 +71,23 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     }
   }, [value]);
 
+  const publishEditorValue = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sanitized = sanitizeMacroImages(editor.innerHTML);
+    if (sanitized.removedImages > 0) {
+      editor.innerHTML = sanitized.html;
+      setImageWarning(
+        "Uma imagem incompatível, muito grande ou acima do limite foi removida.",
+      );
+    }
+    onChange(sanitized.html);
+  };
+
   const executeCommand = (command: EditorCommand) => {
     editorRef.current?.focus();
     document.execCommand(command.command, false, command.value);
-    onChange(editorRef.current?.innerHTML ?? "");
+    publishEditorValue();
   };
 
   const insertLink = () => {
@@ -74,7 +96,100 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
 
     editorRef.current?.focus();
     document.execCommand("createLink", false, url);
-    onChange(editorRef.current?.innerHTML ?? "");
+    publishEditorValue();
+  };
+
+  const rememberEditorSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      savedSelectionRef.current = range.cloneRange();
+    }
+  };
+
+  const restoreEditorSelection = () => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return false;
+    const range = savedSelectionRef.current;
+    if (range && editor.contains(range.commonAncestorContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }
+    const fallback = document.createRange();
+    fallback.selectNodeContents(editor);
+    fallback.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(fallback);
+    return true;
+  };
+
+  const insertImageFiles = async (files: readonly File[]) => {
+    const editor = editorRef.current;
+    if (!editor || files.length === 0) return;
+    const availableSlots =
+      MAX_MACRO_IMAGES - editor.querySelectorAll("img").length;
+    if (availableSlots <= 0) {
+      setImageWarning(`Use no máximo ${MAX_MACRO_IMAGES} imagens por macro.`);
+      return;
+    }
+
+    const selectedFiles = files.slice(0, availableSlots);
+    const acceptedFiles = selectedFiles.filter(isSupportedImageFile);
+    if (acceptedFiles.length !== selectedFiles.length) {
+      setImageWarning(
+        `Use PNG, JPEG, GIF ou WebP com até ${MAX_EMBEDDED_IMAGE_BYTES / 1024} KB por imagem.`,
+      );
+    }
+
+    try {
+      for (const file of acceptedFiles) {
+        const dataUrl = await readFileAsDataUrl(file);
+        restoreEditorSelection();
+        const previousCount = editor.querySelectorAll("img").length;
+        document.execCommand("insertImage", false, dataUrl);
+        const images = editor.querySelectorAll<HTMLImageElement>("img");
+        if (images.length === previousCount) continue;
+        const insertedImage = images[images.length - 1];
+        if (!insertedImage.alt) insertedImage.alt = file.name || "Imagem";
+        rememberEditorSelection();
+      }
+    } catch {
+      setImageWarning("Não foi possível ler uma das imagens selecionadas.");
+    }
+
+    if (files.length > availableSlots) {
+      setImageWarning(`Use no máximo ${MAX_MACRO_IMAGES} imagens por macro.`);
+    } else if (acceptedFiles.length === selectedFiles.length) {
+      setImageWarning(undefined);
+    }
+    publishEditorValue();
+  };
+
+  const openImagePicker = () => {
+    rememberEditorSelection();
+    imageInputRef.current?.click();
+  };
+
+  const handleImageInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    void insertImageFiles(files);
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (imageFiles.length === 0) return;
+    event.preventDefault();
+    rememberEditorSelection();
+    void insertImageFiles(imageFiles);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -97,7 +212,7 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     } else {
       indentListItem(listItem);
     }
-    onChange(editorRef.current.innerHTML);
+    publishEditorValue();
   };
 
   return (
@@ -130,7 +245,30 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
         >
           <span className="material-symbols-outlined">link</span>
         </button>
+        <button
+          type="button"
+          className="rich-text-tool"
+          aria-label="Inserir imagem do computador"
+          title="Inserir imagem do computador"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={openImagePicker}
+        >
+          <span className="material-symbols-outlined">image</span>
+        </button>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          hidden
+          onChange={handleImageInput}
+        />
       </div>
+      {imageWarning && (
+        <div className="rich-text-image-warning" role="status">
+          {imageWarning}
+        </div>
+      )}
       <div
         id={id}
         ref={editorRef}
@@ -139,11 +277,22 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
         role="textbox"
         aria-multiline="true"
         onKeyDown={handleKeyDown}
-        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+        onPaste={handlePaste}
+        onInput={publishEditorValue}
         data-placeholder="Digite o texto que será inserido quando o atalho for usado..."
       />
     </div>
   );
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Falha ao ler a imagem"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function getListItem(

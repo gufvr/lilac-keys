@@ -3,20 +3,31 @@ import test from "node:test";
 import { performance } from "node:perf_hooks";
 
 import { parseHTML } from "linkedom";
+import {
+  normalizeHttpsImageUrl,
+  stripUnsupportedMacroImages,
+} from "../src/utils/macroImages.ts";
+import {
+  classifyMacroImageSource,
+  MAX_EMBEDDED_IMAGE_BYTES,
+} from "../src/content/hubspotImages.ts";
 
 import {
   classifyHubSpotPayload,
+  ensureHubSpotSelectionOutsideList,
   findHubSpotEditor,
   handleHubSpotPlaceholderTab,
   htmlToHubSpotPlainText,
   insertStructuredBatches,
   isHubSpotPage,
+  isRemirrorEditor,
   measureHubSpotResponsiveness,
   moveToNextHubSpotPlaceholder,
   prepareHubSpotHtml,
   runExclusiveHubSpotExpansion,
   sanitizeHubSpotHtml,
   selectFirstHubSpotPlaceholder,
+  shouldInsertHubSpotAtomically,
 } from "../src/content/editors/hubspotEditor.ts";
 
 function createDocument(): Document {
@@ -69,7 +80,17 @@ function htmlWithSize(kilobytes: number): string {
 test("reconhece somente domínios oficiais do HubSpot", () => {
   assert.equal(isHubSpotPage("app.hubspot.com"), true);
   assert.equal(isHubSpotPage("app-eu1.hubspot.com"), true);
+  assert.equal(isHubSpotPage("static.hsappstatic.net"), true);
+  assert.equal(isHubSpotPage("app.hsappstatic.net"), true);
   assert.equal(isHubSpotPage("hubspot.com"), true);
+  assert.equal(
+    isHubSpotPage("", ["https://app.hubspot.com/help-desk/123"]),
+    true,
+  );
+  assert.equal(
+    isHubSpotPage("", ["https://example.com/embed"]),
+    false,
+  );
   assert.equal(isHubSpotPage("hubspot.example.com"), false);
   assert.equal(isHubSpotPage("fakehubspot.com"), false);
 });
@@ -118,6 +139,54 @@ test("localiza editores pelo target, composedPath e activeElement", () => {
     })?.id,
     "active",
   );
+});
+
+test("localiza estruturas atuais com contenteditable vazio e editores semânticos", () => {
+  const { document, window } = parseHTML(`
+    <html><body>
+      <div id="empty" contenteditable=""><span>vazio</span></div>
+      <div id="slate" data-slate-editor="true"><span>slate</span></div>
+      <div id="lexical" data-lexical-editor="true"><span>lexical</span></div>
+      <div id="prosemirror" class="ProseMirror"><span>prosemirror</span></div>
+      <div id="textbox" role="textbox" aria-multiline="true"><span>textbox</span></div>
+    </body></html>`);
+  (globalThis as unknown as { HTMLElement: typeof HTMLElement }).HTMLElement =
+    window.HTMLElement as unknown as typeof HTMLElement;
+
+  for (const id of ["empty", "slate", "lexical", "prosemirror", "textbox"]) {
+    const editor = document.querySelector(`#${id}`)!;
+    const inner = editor.querySelector("span")!;
+    assert.equal(
+      findHubSpotEditor({
+        eventTarget: inner,
+        eventPath: [inner, editor],
+        activeElement: editor,
+        selection: {
+          anchorNode: inner.firstChild,
+          focusNode: inner.firstChild,
+        } as unknown as Selection,
+        hostname: "app.hubspot.com",
+      })?.id,
+      id,
+    );
+  }
+});
+
+test("usa inserção atômica no Remirror sem marcador técnico", () => {
+  const { document, window } = parseHTML(`
+    <html><body>
+      <div id="remirror" class="remirror-editor ProseMirror" contenteditable="true"></div>
+      <div id="legacy" contenteditable="true"></div>
+    </body></html>`);
+  (globalThis as unknown as { HTMLElement: typeof HTMLElement }).HTMLElement =
+    window.HTMLElement as unknown as typeof HTMLElement;
+  const remirror = document.querySelector("#remirror") as unknown as HTMLElement;
+  const legacy = document.querySelector("#legacy") as unknown as HTMLElement;
+
+  assert.equal(isRemirrorEditor(remirror), true);
+  assert.equal(shouldInsertHubSpotAtomically(remirror, "structured"), true);
+  assert.equal(shouldInsertHubSpotAtomically(legacy, "structured"), false);
+  assert.equal(shouldInsertHubSpotAtomically(legacy, "rich"), true);
 });
 
 test("rejeita caixas de pesquisa e campos fora da seleção", () => {
@@ -209,7 +278,8 @@ test("remove excesso de Word e Gmail preservando a estrutura útil", () => {
 
   const sanitized = sanitizeHubSpotHtml(html, document);
   assert.doesNotMatch(sanitized, /style=|class=|onclick=|data-source=/i);
-  assert.doesNotMatch(sanitized, /<(img|script)\b/i);
+  assert.match(sanitized, /<img\b[^>]*data:image\/png;base64,AAAA/i);
+  assert.doesNotMatch(sanitized, /<script\b/i);
   assert.doesNotMatch(sanitized, /javascript:/i);
   assert.match(sanitized, /<strong><span data-lilackeys-placeholder="true">%NOME%<\/span><\/strong>/);
   assert.match(sanitized, /<ul><li>Primeiro<\/li><\/ul>/);
@@ -286,7 +356,7 @@ test("mede responsividade depois de dois frames sem conteúdo da macro", () => {
   }
 });
 
-test("preserva HTML semântico, links seguros e imagens HTTPS limitadas", () => {
+test("preserva HTML semântico e imagens HTTPS ou incorporadas seguras", () => {
   const document = createDocument();
   const html = `
     <p class="MsoNormal"><strong>Negrito</strong> <em>Itálico</em> <u>Sublinhado</u> <s>Riscado</s></p>
@@ -307,14 +377,13 @@ test("preserva HTML semântico, links seguros e imagens HTTPS limitadas", () => 
   assert.match(prepared.html, /<img\b[^>]*alt="Produto"/);
   assert.match(prepared.html, /<img\b[^>]*width="1600"/);
   assert.match(prepared.html, /<img\b[^>]*height="500"/);
-  assert.match(prepared.html, /\[Imagem: Incorporada\]/);
-  assert.match(prepared.html, /\[Imagem: Temporária\]/);
-  assert.doesNotMatch(prepared.html, /class=|target=|data:image|blob:/);
-  assert.equal(prepared.acceptedImages, 1);
-  assert.equal(prepared.rejectedImages, 2);
+  assert.match(prepared.html, /data:image\/png;base64,AAAA/);
+  assert.doesNotMatch(prepared.html, /class=|target=|blob:/);
+  assert.equal(prepared.acceptedImages, 2);
+  assert.equal(prepared.rejectedImages, 1);
 });
 
-test("limita imagens HTTPS e remove pixels de rastreamento", () => {
+test("preserva até doze imagens HTTPS e remove pixels de rastreamento", () => {
   const document = createDocument();
   const images = [
     '<img src="https://cdn.example.com/track.gif" alt="Track" width="1" height="1">',
@@ -325,10 +394,76 @@ test("limita imagens HTTPS e remove pixels de rastreamento", () => {
   ].join("");
   const prepared = prepareHubSpotHtml(images, document);
 
-  assert.equal(prepared.acceptedImages, 3);
-  assert.equal(prepared.rejectedImages, 2);
-  assert.equal((prepared.html.match(/<img\b/g) ?? []).length, 3);
+  assert.equal(prepared.acceptedImages, 4);
+  assert.equal(prepared.rejectedImages, 1);
+  assert.equal((prepared.html.match(/<img\b/g) ?? []).length, 4);
   assert.match(prepared.html, /\[Imagem: Track\]/);
+});
+
+test("mantém imagens incorporadas seguras e remove blob ou HTTP", () => {
+  const html =
+    '<p>Antes</p><img src="data:image/png;base64,AAAA" alt="Local">' +
+    '<img src="blob:https://app.hubspot.com/id" alt="Blob">' +
+    '<img src="http://example.com/insegura.png" alt="HTTP">' +
+    '<img src="https://cdn.example.com/segura.png" alt="HTTPS"><p>Depois</p>';
+  const sanitized = stripUnsupportedMacroImages(html);
+
+  assert.equal(sanitized.removedImages, 2);
+  assert.match(sanitized.html, /data:image\/png;base64,AAAA/);
+  assert.doesNotMatch(sanitized.html, /blob:|http:\/\//);
+  assert.match(sanitized.html, /https:\/\/cdn\.example\.com\/segura\.png/);
+  assert.match(sanitized.html, /^<p>Antes<\/p>/);
+  assert.match(sanitized.html, /<p>Depois<\/p>$/);
+});
+
+test("aceita somente URL HTTPS válida para novas imagens", () => {
+  assert.equal(
+    normalizeHttpsImageUrl("https://cdn.example.com/imagem.png"),
+    "https://cdn.example.com/imagem.png",
+  );
+  assert.equal(normalizeHttpsImageUrl("http://example.com/imagem.png"), null);
+  assert.equal(normalizeHttpsImageUrl("data:image/png;base64,AAAA"), null);
+  assert.equal(normalizeHttpsImageUrl("blob:https://example.com/id"), null);
+  assert.equal(normalizeHttpsImageUrl("não é uma URL"), null);
+});
+
+test("aceita imagem incorporada segura e rejeita payload excessivo", () => {
+  assert.deepEqual(classifyMacroImageSource("data:image/png;base64,AAAA"), {
+    kind: "embedded",
+    source: "data:image/png;base64,AAAA",
+    bytes: 3,
+  });
+  const oversized = `data:image/png;base64,${"A".repeat(
+    Math.ceil((MAX_EMBEDDED_IMAGE_BYTES * 4) / 3) + 8,
+  )}`;
+  assert.equal(classifyMacroImageSource(oversized), null);
+});
+
+test("mantém imagem incorporada como lote semântico completo", async () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  const dataUrl = `data:image/png;base64,${"A".repeat(150 * 1024)}`;
+  const prepared = prepareHubSpotHtml(
+    `<p>Antes</p><img src="${dataUrl}" alt="Local"><p>Depois</p>`,
+    document,
+  );
+  const inserted: string[] = [];
+  const boundary = createTestBoundary();
+  const result = await insertStructuredBatches(editor, prepared.batches, {
+    insertHtml: (_editor, html) => {
+      inserted.push(html);
+      return true;
+    },
+    createBoundary: () => boundary.boundary,
+    ensureOutsideList: () => true,
+    selectionBelongs: () => true,
+    yieldFrame: async () => undefined,
+  });
+
+  assert.equal(result.inserted, true);
+  assert.equal(inserted.length, 3);
+  assert.match(inserted[1], /^<img\b[^>]*data:image\/png;base64/);
+  assert.match(inserted[1], /alt="Local"/);
 });
 
 test("divide listas ordenadas entre itens mantendo a numeração", () => {
@@ -371,6 +506,7 @@ test("isola listas e preserva a ordem e a hierarquia da macro de regressão", ()
     "<ul><li>Documento jurídico<ul><li>Contrato Social</li><li>Certificado</li></ul></li><li>Endereço</li></ul>",
     "<ol><li>Enviar documentos</li><li>Aguardar validação</li></ol>",
     "<p>Depois do envio, avise aqui. &#x1F60A;</p>",
+    `<p>${"x".repeat(5000)}</p>`,
   ].join("");
   const prepared = prepareHubSpotHtml(html, document);
   const listBatches = prepared.batches.filter((batch) => /<(?:ol|ul)\b/.test(batch));
@@ -388,7 +524,7 @@ test("isola listas e preserva a ordem e a hierarquia da macro de regressão", ()
   reconstructed.innerHTML = prepared.batches.join("");
   const topLevel = Array.from(reconstructed.children);
   assert.deepEqual(
-    topLevel.map((element) => element.tagName),
+    topLevel.slice(0, 10).map((element) => element.tagName),
     ["P", "OL", "P", "P", "P", "UL", "P", "UL", "OL", "P"],
   );
   assert.deepEqual(
@@ -397,22 +533,39 @@ test("isola listas e preserva a ordem e a hierarquia da macro de regressão", ()
   );
   assert.equal(reconstructed.querySelectorAll("li:empty").length, 0);
   assert.equal(reconstructed.querySelectorAll("li > p").length, 0);
-  assert.equal(topLevel.at(-1)?.textContent, "Depois do envio, avise aqui. 😊");
+  assert.equal(topLevel[9].textContent, "Depois do envio, avise aqui. 😊");
 });
 
 test("mantém ul e ol independentes quando aparecem em sequência", () => {
   const document = createDocument();
   const prepared = prepareHubSpotHtml(
     "<ul><li>Bullet</li></ul><ol><li>Número</li></ol>" +
-      "<ul><li>Outro bullet</li></ul>",
+      `<ul><li>Outro bullet</li></ul><p>${"x".repeat(5000)}</p>`,
     document,
   );
 
-  assert.deepEqual(prepared.batches, [
+  assert.deepEqual(prepared.batches.slice(0, 3), [
     "<ul><li>Bullet</li></ul>",
     "<ol><li>Número</li></ol>",
     "<ul><li>Outro bullet</li></ul>",
   ]);
+});
+
+test("insere HTML structured compacto como uma árvore única", () => {
+  const document = createDocument();
+  const html =
+    "<p>Etapas:</p>" +
+    `<ol>${Array.from({ length: 20 }, (_, index) => `<li>Item ${index + 1}</li>`).join("")}</ol>` +
+    "<p>Documentos:</p>" +
+    `<ul>${Array.from({ length: 10 }, (_, index) => `<li>Documento ${index + 1}</li>`).join("")}</ul>` +
+    "<p>Conteúdo posterior à lista.</p>";
+  const plan = classifyHubSpotPayload(html);
+  const prepared = prepareHubSpotHtml(html, document);
+
+  assert.equal(plan.strategy, "structured");
+  assert.ok(plan.estimatedElements > 30);
+  assert.equal(prepared.batches.length, 1);
+  assert.equal(prepared.batches[0], prepared.html);
 });
 
 test("não converte Markdown literal sem evidência do formato armazenado", () => {
@@ -816,14 +969,18 @@ test("continua os oito lotes quando o HubSpot altera o cursor entre frames", asy
   const testBoundary = createTestBoundary();
   const batches = Array.from({ length: 8 }, (_, index) => `<p>Lote ${index + 1}</p>`);
   const inserted: string[] = [];
+  let outsideListChecks = 0;
   let now = 0;
   const result = await insertStructuredBatches(editor, batches, {
     insertHtml: (_editor, html) => {
       inserted.push(html);
+      if (inserted.length === 1) testBoundary.remove();
       return true;
     },
-    yieldFrame: async () => {
-      testBoundary.destabilize();
+    yieldFrame: async () => undefined,
+    ensureOutsideList: () => {
+      outsideListChecks += 1;
+      return true;
     },
     selectionBelongs: () => true,
     createBoundary: () => testBoundary.boundary,
@@ -834,10 +991,11 @@ test("continua os oito lotes quando o HubSpot altera o cursor entre frames", asy
   assert.deepEqual(inserted, batches);
   assert.equal(result.batchDurationsMs.length, 8);
   assert.deepEqual(result.batchDurationsMs, Array.from({ length: 8 }, () => 1));
-  assert.equal(testBoundary.stats().placeCalls, 9);
+  assert.equal(outsideListChecks, 8);
+  assert.equal(testBoundary.stats().placeCalls, 2);
 });
 
-test("interrompe com segurança se o HubSpot remover o marcador técnico", async () => {
+test("continua pelo cursor nativo se o HubSpot remover o marcador técnico", async () => {
   const document = createDocument();
   const editor = document.createElement("div") as unknown as HTMLElement;
   const testBoundary = createTestBoundary();
@@ -851,12 +1009,44 @@ test("interrompe com segurança se o HubSpot remover o marcador técnico", async
     yieldFrame: async () => undefined,
     selectionBelongs: () => true,
     createBoundary: () => testBoundary.boundary,
+    ensureOutsideList: () => true,
   });
 
-  assert.equal(result.inserted, false);
-  assert.equal(insertions, 1);
+  assert.equal(result.inserted, true);
+  assert.equal(insertions, 2);
   assert.equal(testBoundary.stats().finishCalls, 0);
   assert.equal(testBoundary.stats().cleanupCalls, 1);
+});
+
+test("sai da lista pelo fluxo nativo antes do próximo lote", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML =
+    '<ol><li id="current">Terceiro</li></ol><p id="outside"><br></p>';
+  const current = editor.querySelector("#current")!;
+  const outside = editor.querySelector("#outside")!;
+  let anchor = current.firstChild!;
+  let paragraphCommands = 0;
+  let outdentCommands = 0;
+
+  const result = ensureHubSpotSelectionOutsideList(editor, {
+    getSelection: () =>
+      ({ isCollapsed: true, anchorNode: anchor }) as unknown as Selection,
+    insertParagraph: () => {
+      paragraphCommands += 1;
+      if (paragraphCommands === 2) anchor = outside;
+      return true;
+    },
+    outdent: () => {
+      outdentCommands += 1;
+      return true;
+    },
+  });
+
+  assert.equal(result, true);
+  assert.equal(paragraphCommands, 2);
+  assert.equal(outdentCommands, 1);
+  assert.equal(anchor, outside);
 });
 
 test("mantém conteúdo anterior e posterior em torno dos lotes", async () => {

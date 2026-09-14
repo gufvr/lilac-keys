@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   loadMacrosFromChrome,
@@ -16,6 +17,29 @@ const savedMacros: Macro[] = [
     textoExpandido: "Olá! Como posso ajudar? 😊",
   },
 ];
+
+test("injeta o content script nos frames internos do HubSpot sem novas permissões", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../manifest.json", import.meta.url), "utf8"),
+  ) as {
+    permissions: string[];
+    content_scripts: Array<{
+      all_frames?: boolean;
+      match_about_blank?: boolean;
+      match_origin_as_fallback?: boolean;
+    }>;
+  };
+  const contentScript = manifest.content_scripts[0];
+
+  assert.deepEqual(manifest.permissions, [
+    "storage",
+    "unlimitedStorage",
+    "contextMenus",
+  ]);
+  assert.equal(contentScript.all_frames, true);
+  assert.equal(contentScript.match_about_blank, true);
+  assert.equal(contentScript.match_origin_as_fallback, true);
+});
 
 test("carrega as macros diretamente do chrome.storage.local", async () => {
   let backgroundWasCalled = false;

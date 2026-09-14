@@ -10,8 +10,7 @@
 
 - Create macros with a name, shortcut, and expanded text.
 - Expand macros in text fields, textareas, and compatible editors.
-- Expand plain-text macros in the main WhatsApp Web message composer.
-- Expand large macros in HubSpot through a performance-safe plain-text mode.
+- Expand formatted macros safely in HubSpot while preserving lists, links, placeholders, and supported images.
 - Press `Shift + Space` to expand a macro.
 - Organize macros into folders and subfolders.
 - Search by macro name, shortcut, or content.

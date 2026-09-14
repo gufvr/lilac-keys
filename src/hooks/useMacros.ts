@@ -3,6 +3,7 @@ import { Folder, Macro } from "../types/macro";
 import { StorageService } from "../services/storageService";
 import { validateMacro, isShortcutUnique } from "../utils/macroValidation";
 import { Folder as ImportedFolder } from "../types/macro";
+import { stripUnsupportedMacroImages } from "../utils/macroImages";
 
 export function useMacros() {
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -15,7 +16,12 @@ export function useMacros() {
         StorageService.loadMacros(),
         StorageService.loadFolders(),
       ]);
-      setMacros(loadedMacros);
+      setMacros(
+        loadedMacros.map((macro) => ({
+          ...macro,
+          textoExpandido: stripUnsupportedMacroImages(macro.textoExpandido).html,
+        })),
+      );
       setFolders(loadedFolders);
       setLoading(false);
     }
@@ -35,17 +41,21 @@ export function useMacros() {
 
   const createMacro = useCallback(
     (macroData: Omit<Macro, "id">): { success: boolean; error?: string } => {
-      const validation = validateMacro(macroData);
+      const sanitizedMacroData = {
+        ...macroData,
+        textoExpandido: stripUnsupportedMacroImages(macroData.textoExpandido).html,
+      };
+      const validation = validateMacro(sanitizedMacroData);
       if (!validation.isValid) {
         return { success: false, error: validation.errors.join(", ") };
       }
 
-      if (!isShortcutUnique(macroData.atalho, macros)) {
+      if (!isShortcutUnique(sanitizedMacroData.atalho, macros)) {
         return { success: false, error: "Este atalho já está em uso" };
       }
 
       const newMacro: Macro = {
-        ...macroData,
+        ...sanitizedMacroData,
         id: crypto.randomUUID(),
       };
 
@@ -60,18 +70,30 @@ export function useMacros() {
       id: string,
       macroData: Partial<Macro>,
     ): { success: boolean; error?: string } => {
-      const validation = validateMacro(macroData);
+      const sanitizedMacroData =
+        typeof macroData.textoExpandido === "string"
+          ? {
+              ...macroData,
+              textoExpandido: stripUnsupportedMacroImages(
+                macroData.textoExpandido,
+              ).html,
+            }
+          : macroData;
+      const validation = validateMacro(sanitizedMacroData);
       if (!validation.isValid) {
         return { success: false, error: validation.errors.join(", ") };
       }
 
-      if (macroData.atalho && !isShortcutUnique(macroData.atalho, macros, id)) {
+      if (
+        sanitizedMacroData.atalho &&
+        !isShortcutUnique(sanitizedMacroData.atalho, macros, id)
+      ) {
         return { success: false, error: "Este atalho já está em uso" };
       }
 
       setMacros((prev) =>
         prev.map((macro) =>
-          macro.id === id ? { ...macro, ...macroData } : macro,
+          macro.id === id ? { ...macro, ...sanitizedMacroData } : macro,
         ),
       );
       return { success: true };
@@ -151,6 +173,7 @@ export function useMacros() {
       setFolders(allFolders);
       const importedMacros = newMacros.map(({ folderName, ...macro }) => ({
         ...macro,
+        textoExpandido: stripUnsupportedMacroImages(macro.textoExpandido).html,
         id: crypto.randomUUID(),
         folderId: macro.folderId
           ? importedFolderIds.get(macro.folderId) ?? macro.folderId
