@@ -195,6 +195,7 @@ async function performHubSpotExpansion(
     !insertion.inserted,
   );
   if (insertion.inserted) {
+    selectFirstHubSpotPlaceholder(editor);
     measureHubSpotResponsiveness(plan, performance.now());
   }
   return insertion.inserted ? "expanded" : "failed";
@@ -582,6 +583,30 @@ function addPlaceholderMarkers(
     fragment.append(text.slice(cursor));
     textNode.replaceWith(fragment);
   });
+}
+
+interface PlaceholderSelectionOptions {
+  getSelection?: () => Selection | null;
+  createRange?: () => Range;
+}
+
+export function selectFirstHubSpotPlaceholder(
+  editor: HTMLElement,
+  options: PlaceholderSelectionOptions = {},
+): boolean {
+  const placeholder = editor.querySelector<HTMLElement>(
+    "[data-lilackeys-placeholder]",
+  );
+  if (!placeholder) return false;
+
+  const selection =
+    options.getSelection?.() ?? editor.ownerDocument.defaultView?.getSelection();
+  if (!selection) return false;
+  const range = options.createRange?.() ?? editor.ownerDocument.createRange();
+  range.selectNodeContents(placeholder);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
 }
 
 function renderPlainText(node: Node): string {

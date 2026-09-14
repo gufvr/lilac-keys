@@ -14,6 +14,7 @@ import {
   prepareHubSpotHtml,
   runExclusiveHubSpotExpansion,
   sanitizeHubSpotHtml,
+  selectFirstHubSpotPlaceholder,
 } from "../src/content/editors/hubspotEditor.ts";
 
 function createDocument(): Document {
@@ -347,6 +348,80 @@ test("considera expansão de entidades HTML no limite do lote", () => {
 
   assert.ok(prepared.batches.length > 1);
   assert.ok(prepared.batches.every((batch) => batch.length <= 8 * 1024));
+});
+
+test("seleciona o primeiro placeholder depois da expansão", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML = prepareHubSpotHtml(
+    "<p>Olá, %NOME%.</p><p>Protocolo: %PROTOCOLO%</p>",
+    document,
+  ).html;
+  let selectedNode: Node | null = null;
+  let removedRanges = 0;
+  let addedRanges = 0;
+  const range = {
+    selectNodeContents: (node: Node) => {
+      selectedNode = node;
+    },
+  } as unknown as Range;
+  const selection = {
+    removeAllRanges: () => {
+      removedRanges += 1;
+    },
+    addRange: (addedRange: Range) => {
+      assert.equal(addedRange, range);
+      addedRanges += 1;
+    },
+  } as unknown as Selection;
+
+  assert.equal(
+    selectFirstHubSpotPlaceholder(editor, {
+      getSelection: () => selection,
+      createRange: () => range,
+    }),
+    true,
+  );
+  assert.equal((selectedNode as Node | null)?.textContent, "%NOME%");
+  assert.equal(removedRanges, 1);
+  assert.equal(addedRanges, 1);
+});
+
+test("mantém placeholders em macros estruturadas divididas em lotes", () => {
+  const document = createDocument();
+  const html = Array.from(
+    { length: 80 },
+    (_, index) => `<p>Campo ${index + 1}: %VALOR_${index + 1}%</p>`,
+  ).join("");
+  const prepared = prepareHubSpotHtml(html, document);
+
+  assert.ok(prepared.batches.length > 1);
+  assert.equal(
+    prepared.batches.reduce(
+      (total, batch) =>
+        total + (batch.match(/data-lilackeys-placeholder="true"/g) ?? []).length,
+      0,
+    ),
+    80,
+  );
+});
+
+test("mantém o cursor final quando a macro não possui placeholder", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML = "<p>Macro sem campos</p>";
+  let selectionRequested = false;
+
+  assert.equal(
+    selectFirstHubSpotPlaceholder(editor, {
+      getSelection: () => {
+        selectionRequested = true;
+        return null;
+      },
+    }),
+    false,
+  );
+  assert.equal(selectionRequested, false);
 });
 
 test("insere lotes em ordem, cedendo um frame e mantendo a seleção", async () => {
