@@ -14,6 +14,8 @@ const STRUCTURED_MAX_BATCHES = 100;
 const MAX_SAFE_IMAGES = 3;
 const MAX_IMAGE_URL_LENGTH = 2048;
 const MAX_IMAGE_DIMENSION = 1600;
+const PLACEHOLDER_SEARCH_MAX_NODES = 200;
+const PLACEHOLDER_SEARCH_MAX_CHARACTERS = 64 * 1024;
 const activeExpansions = new WeakSet<HTMLElement>();
 
 const ALLOWED_ELEMENTS = new Set([
@@ -590,6 +592,13 @@ interface PlaceholderSelectionOptions {
   createRange?: () => Range;
 }
 
+interface PlaceholderNavigationEvent {
+  key: string;
+  shiftKey: boolean;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+}
+
 export function selectFirstHubSpotPlaceholder(
   editor: HTMLElement,
   options: PlaceholderSelectionOptions = {},
@@ -607,6 +616,156 @@ export function selectFirstHubSpotPlaceholder(
   selection.removeAllRanges();
   selection.addRange(range);
   return true;
+}
+
+export function handleHubSpotPlaceholderTab(
+  event: PlaceholderNavigationEvent,
+  editor: HTMLElement,
+  selection: Selection | null,
+  options: Pick<PlaceholderSelectionOptions, "createRange"> = {},
+): boolean {
+  if (event.key !== "Tab" || event.shiftKey) return false;
+  if (!moveToNextHubSpotPlaceholder(editor, selection, options)) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+
+export function moveToNextHubSpotPlaceholder(
+  editor: HTMLElement,
+  selection: Selection | null,
+  options: Pick<PlaceholderSelectionOptions, "createRange"> = {},
+): boolean {
+  const anchorNode = selection?.anchorNode;
+  if (!selection || !anchorNode || !editor.contains(anchorNode)) return false;
+
+  const start = getForwardTextPosition(editor, anchorNode, selection.anchorOffset);
+  if (!start) return false;
+  const currentMarker = findPlaceholderAncestor(anchorNode, editor);
+  const nextMarker = findNextMarkedPlaceholder(editor, start, currentMarker);
+  const range = options.createRange?.() ?? editor.ownerDocument.createRange();
+  if (nextMarker) {
+    range.selectNodeContents(nextMarker);
+  } else {
+    const match = findNextPlaceholderText(editor, start);
+    if (!match) return false;
+    range.setStart(match.node, match.start);
+    range.setEnd(match.node, match.end);
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+interface TextPosition {
+  node: Text;
+  offset: number;
+}
+
+function getForwardTextPosition(
+  editor: HTMLElement,
+  anchorNode: Node,
+  anchorOffset: number,
+): TextPosition | null {
+  if (anchorNode.nodeType === 3) {
+    const text = anchorNode as Text;
+    return { node: text, offset: Math.min(anchorOffset, text.data.length) };
+  }
+
+  const child = anchorNode.childNodes[anchorOffset];
+  const text = child ? findFirstTextNode(child) : null;
+  if (text) return { node: text, offset: 0 };
+  const next = findNextTextNode(editor, child ?? anchorNode);
+  return next ? { node: next, offset: 0 } : null;
+}
+
+function findNextMarkedPlaceholder(
+  editor: HTMLElement,
+  start: TextPosition,
+  currentMarker: HTMLElement | null,
+): HTMLElement | null {
+  let node: Text | null = start.node;
+  let inspectedNodes = 0;
+  let inspectedCharacters = 0;
+  while (
+    node &&
+    inspectedNodes < PLACEHOLDER_SEARCH_MAX_NODES &&
+    inspectedCharacters <= PLACEHOLDER_SEARCH_MAX_CHARACTERS
+  ) {
+    const marker = findPlaceholderAncestor(node, editor);
+    if (marker && marker !== currentMarker) return marker;
+    inspectedNodes += 1;
+    inspectedCharacters += node.data.length;
+    node = findNextTextNode(editor, node);
+  }
+  return null;
+}
+
+function findNextPlaceholderText(
+  editor: HTMLElement,
+  start: TextPosition,
+): { node: Text; start: number; end: number } | null {
+  let node: Text | null = start.node;
+  let offset = start.offset;
+  let inspectedNodes = 0;
+  let inspectedCharacters = 0;
+  while (
+    node &&
+    inspectedNodes < PLACEHOLDER_SEARCH_MAX_NODES &&
+    inspectedCharacters <= PLACEHOLDER_SEARCH_MAX_CHARACTERS
+  ) {
+    const available = node.data.slice(offset);
+    const match = /%[^%\r\n]+%/.exec(available);
+    if (match) {
+      const matchStart = offset + match.index;
+      return {
+        node,
+        start: matchStart,
+        end: matchStart + match[0].length,
+      };
+    }
+    inspectedNodes += 1;
+    inspectedCharacters += available.length;
+    node = findNextTextNode(editor, node);
+    offset = 0;
+  }
+  return null;
+}
+
+function findPlaceholderAncestor(
+  node: Node,
+  editor: HTMLElement,
+): HTMLElement | null {
+  let element = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+  while (element && element !== editor) {
+    if (element.hasAttribute("data-lilackeys-placeholder")) return element;
+    element = element.parentElement;
+  }
+  return null;
+}
+
+function findFirstTextNode(node: Node): Text | null {
+  if (node.nodeType === 3) return node as Text;
+  for (const child of Array.from(node.childNodes)) {
+    const text = findFirstTextNode(child);
+    if (text) return text;
+  }
+  return null;
+}
+
+function findNextTextNode(root: Node, node: Node): Text | null {
+  let current: Node | null = node;
+  while (current && current !== root) {
+    if (current.nextSibling) {
+      const text = findFirstTextNode(current.nextSibling);
+      if (text) return text;
+      current = current.nextSibling;
+      continue;
+    }
+    current = current.parentNode;
+  }
+  return null;
 }
 
 function renderPlainText(node: Node): string {

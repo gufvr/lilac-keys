@@ -7,6 +7,8 @@ import {
 import {
   expandHubSpotMacro,
   findHubSpotEditor,
+  handleHubSpotPlaceholderTab,
+  isHubSpotPage,
 } from "./editors/hubspotEditor";
 import { createChromeMacroCache } from "./macroCache";
 import { findIndexedMacro, type MacroSnapshot } from "./macroIndex";
@@ -16,7 +18,25 @@ const macroCache = createChromeMacroCache();
 let isExpandingMacro = false;
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Tab" && moveToNextPlaceholder(e)) return;
+  if (e.key === "Tab") {
+    if (isHubSpotPage()) {
+      const hubspotEditor = findHubSpotEditor({
+        eventTarget: e.target,
+        eventPath: e.composedPath(),
+        activeElement: document.activeElement,
+        selection: window.getSelection(),
+      });
+      if (hubspotEditor) {
+        handleHubSpotPlaceholderTab(
+          e,
+          hubspotEditor,
+          window.getSelection(),
+        );
+      }
+      return;
+    }
+    if (moveToNextPlaceholder(e)) return;
+  }
   if (e.key !== " " || !e.shiftKey) return;
 
   const whatsappComposer = findWhatsAppMessageComposer({

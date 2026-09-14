@@ -7,10 +7,12 @@ import { parseHTML } from "linkedom";
 import {
   classifyHubSpotPayload,
   findHubSpotEditor,
+  handleHubSpotPlaceholderTab,
   htmlToHubSpotPlainText,
   insertStructuredBatches,
   isHubSpotPage,
   measureHubSpotResponsiveness,
+  moveToNextHubSpotPlaceholder,
   prepareHubSpotHtml,
   runExclusiveHubSpotExpansion,
   sanitizeHubSpotHtml,
@@ -422,6 +424,186 @@ test("mantém o cursor final quando a macro não possui placeholder", () => {
     false,
   );
   assert.equal(selectionRequested, false);
+});
+
+test("Tab avança para o próximo marcador após substituir o primeiro", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML =
+    '<p>Olá, <span data-lilackeys-placeholder="true">Gustavo</span>. ' +
+    'Protocolo: <span data-lilackeys-placeholder="true">%PROTOCOLO%</span>.</p>';
+  const firstValue = editor.querySelector("span")!.firstChild!;
+  let selectedNode: Node | null = null;
+  const range = {
+    selectNodeContents: (node: Node) => {
+      selectedNode = node;
+    },
+  } as unknown as Range;
+  const selection = {
+    anchorNode: firstValue,
+    anchorOffset: firstValue.textContent?.length ?? 0,
+    removeAllRanges: () => undefined,
+    addRange: () => undefined,
+  } as unknown as Selection;
+
+  assert.equal(
+    moveToNextHubSpotPlaceholder(editor, selection, {
+      createRange: () => range,
+    }),
+    true,
+  );
+  assert.equal((selectedNode as Node | null)?.textContent, "%PROTOCOLO%");
+});
+
+test("Tab encontra texto %...% quando o HubSpot remove os marcadores", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML =
+    "<p>Olá, Gustavo. Seu protocolo é <strong>%PROTOCOLO%</strong>.</p>";
+  const currentText = editor.querySelector("p")!.firstChild!;
+  const protocolText = editor.querySelector("strong")!.firstChild!;
+  let rangeStart: [Node, number] | null = null;
+  let rangeEnd: [Node, number] | null = null;
+  const range = {
+    setStart: (node: Node, offset: number) => {
+      rangeStart = [node, offset];
+    },
+    setEnd: (node: Node, offset: number) => {
+      rangeEnd = [node, offset];
+    },
+  } as unknown as Range;
+  const selection = {
+    anchorNode: currentText,
+    anchorOffset: currentText.textContent?.length ?? 0,
+    removeAllRanges: () => undefined,
+    addRange: () => undefined,
+  } as unknown as Selection;
+
+  assert.equal(
+    moveToNextHubSpotPlaceholder(editor, selection, {
+      createRange: () => range,
+    }),
+    true,
+  );
+  assert.deepEqual(rangeStart, [protocolText, 0]);
+  assert.deepEqual(rangeEnd, [protocolText, "%PROTOCOLO%".length]);
+});
+
+test("Tab usa somente placeholders posteriores ao cursor", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML =
+    "<p>%ANTERIOR%</p><p>Preenchido</p><ul><li><em>%SEGUINTE%</em></li></ul>";
+  const currentText = editor.querySelectorAll("p")[1].firstChild!;
+  const nextText = editor.querySelector("em")!.firstChild!;
+  let selectedStart: [Node, number] | null = null;
+  const range = {
+    setStart: (node: Node, offset: number) => {
+      selectedStart = [node, offset];
+    },
+    setEnd: () => undefined,
+  } as unknown as Range;
+  const selection = {
+    anchorNode: currentText,
+    anchorOffset: currentText.textContent?.length ?? 0,
+    removeAllRanges: () => undefined,
+    addRange: () => undefined,
+  } as unknown as Selection;
+
+  assert.equal(
+    moveToNextHubSpotPlaceholder(editor, selection, {
+      createRange: () => range,
+    }),
+    true,
+  );
+  assert.deepEqual(selectedStart, [nextText, 0]);
+});
+
+test("só bloqueia o Tab quando a navegação acontece", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML = "<p>Texto final</p>";
+  const text = editor.querySelector("p")!.firstChild!;
+  const selection = {
+    anchorNode: text,
+    anchorOffset: text.textContent?.length ?? 0,
+    removeAllRanges: () => undefined,
+    addRange: () => undefined,
+  } as unknown as Selection;
+  let prevented = 0;
+  let stopped = 0;
+  const event = {
+    key: "Tab",
+    shiftKey: false,
+    preventDefault: () => {
+      prevented += 1;
+    },
+    stopPropagation: () => {
+      stopped += 1;
+    },
+  };
+
+  assert.equal(handleHubSpotPlaceholderTab(event, editor, selection), false);
+  assert.equal(prevented, 0);
+  assert.equal(stopped, 0);
+  assert.equal(
+    handleHubSpotPlaceholderTab({ ...event, shiftKey: true }, editor, selection),
+    false,
+  );
+  assert.equal(prevented, 0);
+  assert.equal(stopped, 0);
+});
+
+test("bloqueia o evento quando o Tab seleciona o próximo campo", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML =
+    '<p><span data-lilackeys-placeholder="true">Preenchido</span></p>' +
+    '<p><span data-lilackeys-placeholder="true">%PROXIMO%</span></p>';
+  const current = editor.querySelector("span")!.firstChild!;
+  const selection = {
+    anchorNode: current,
+    anchorOffset: current.textContent?.length ?? 0,
+    removeAllRanges: () => undefined,
+    addRange: () => undefined,
+  } as unknown as Selection;
+  let prevented = 0;
+  let stopped = 0;
+  const range = { selectNodeContents: () => undefined } as unknown as Range;
+
+  assert.equal(
+    handleHubSpotPlaceholderTab(
+      {
+        key: "Tab",
+        shiftKey: false,
+        preventDefault: () => {
+          prevented += 1;
+        },
+        stopPropagation: () => {
+          stopped += 1;
+        },
+      },
+      editor,
+      selection,
+      { createRange: () => range },
+    ),
+    true,
+  );
+  assert.equal(prevented, 1);
+  assert.equal(stopped, 1);
+});
+
+test("não navega quando a seleção está fora do editor", () => {
+  const document = createDocument();
+  const editor = document.createElement("div") as unknown as HTMLElement;
+  editor.innerHTML = "<p>%CAMPO%</p>";
+  const outside = document.createTextNode("fora");
+  const selection = {
+    anchorNode: outside,
+    anchorOffset: 0,
+  } as unknown as Selection;
+
+  assert.equal(moveToNextHubSpotPlaceholder(editor, selection), false);
 });
 
 test("insere lotes em ordem, cedendo um frame e mantendo a seleção", async () => {
