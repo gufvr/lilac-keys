@@ -12,6 +12,171 @@ export interface InsertionOptions {
   createPasteEvent?: (html: string, text: string) => ClipboardEvent;
 }
 
+// A DOM change inside an existing ProseMirror paragraph is parsed with that
+// paragraph as `topNode`. Block descendants can consequently be flattened.
+// Replace only the focused top-level block with valid sibling blocks instead:
+// the editor's own DOM observer then parses a document-level change. No private
+// editor API, mounting, persistent marker or whole-editor serialization is used.
+export async function insertHubSpotBlockHtml(
+  editor: HTMLElement,
+  html: string,
+  options: Pick<InsertionOptions, "yieldFrame"> = {},
+): Promise<HubSpotInsertionResult> {
+  const initial = currentEditorRange(editor)?.cloneRange();
+  const durations: number[] = [];
+  const fail = (reason: string): HubSpotInsertionResult => ({ inserted: false, batchDurationsMs: durations, failureReason: reason });
+  if (!initial) return fail("selection-left-editor");
+  const started = performance.now();
+  const doc = editor.ownerDocument;
+  const view = doc.defaultView!;
+  const expected = doc.createElement("div");
+  expected.innerHTML = html; // Detached, already sanitized payload.
+  if (!expected.childNodes.length) return fail("empty-payload");
+  normalizeProseMirrorListItems(expected);
+
+  let block: Node = initial.startContainer;
+  while (block.parentNode && block.parentNode !== editor) block = block.parentNode;
+  if (block === editor || block.parentNode !== editor || !block.contains(initial.endContainer)) {
+    return fail("unsupported-block-boundary");
+  }
+  // Inspect at most the one block being split, with a hard bound before cloning.
+  const walker = doc.createTreeWalker(block, 5);
+  let characters = 0;
+  let count = 0;
+  for (let node: Node | null = block; node; node = walker.nextNode()) {
+    if (++count > MAX_SCAN_NODES) return fail("existing-block-limit");
+    if (node.nodeType === 3) characters += (node.textContent ?? "").length;
+    if (characters > MAX_SCAN_CHARACTERS) return fail("existing-block-limit");
+  }
+
+  const prefixRange = doc.createRange();
+  prefixRange.selectNodeContents(block);
+  prefixRange.setEnd(initial.startContainer, initial.startOffset);
+  const suffixRange = doc.createRange();
+  suffixRange.selectNodeContents(block);
+  suffixRange.setStart(initial.endContainer, initial.endOffset);
+  const prefix = block.nodeType === 3 ? doc.createElement("p") : block.cloneNode(false);
+  prefix.appendChild(prefixRange.cloneContents());
+  const suffix = block.nodeType === 3 ? doc.createElement("p") : block.cloneNode(false);
+  suffix.appendChild(suffixRange.cloneContents());
+  const hasPrefix = trimSplitBoundary(prefix, false);
+  const hasSuffix = trimSplitBoundary(suffix, true);
+  preserveSuffixListNumbering(block, suffix, initial.endContainer, hasSuffix);
+  if (hasPrefix) normalizeProseMirrorListItems(prefix as HTMLElement);
+  if (hasSuffix) normalizeProseMirrorListItems(suffix as HTMLElement);
+  if (hasPrefix) addTrailingBreakGuards(prefix, true);
+  if (hasSuffix) addTrailingBreakGuards(suffix, true);
+
+  const replacement = doc.createDocumentFragment();
+  if (hasPrefix) replacement.append(prefix);
+  const insertedNodes = Array.from(expected.childNodes).map(node => node.cloneNode(true));
+  for (const node of insertedNodes) addTrailingBreakGuards(node, false);
+  replacement.append(...insertedNodes);
+  if (hasSuffix) replacement.append(suffix);
+  if (!sameRange(initial, currentEditorRange(editor))) return fail("selection-changed");
+  try {
+    const focusedBlock = doc.createRange();
+    focusedBlock.selectNode(block);
+    focusedBlock.deleteContents();
+    focusedBlock.insertNode(replacement);
+    const caret = doc.createRange();
+    caret.selectNodeContents(insertedNodes[insertedNodes.length - 1]);
+    caret.collapse(false);
+    selectRange(editor, caret);
+    // MutationObserver supplies the structural change to ProseMirror; input
+    // also informs editor integrations. Never fake Enter/delete/outdent or rely
+    // on Chromium's native HTML editing heuristics between these operations.
+    editor.dispatchEvent(new view.InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+    durations.push(performance.now() - started);
+    const yieldFrame = options.yieldFrame ?? (() => new Promise<void>(resolve => view.requestAnimationFrame(() => resolve())));
+    await yieldFrame();
+    await yieldFrame();
+    const reconciledCaret = currentEditorRange(editor);
+    if (!reconciledCaret?.collapsed) return fail("selection-changed");
+    const insertedRange = locateInsertedContent(editor, reconciledCaret, expected);
+    if (!insertedRange) return fail("reconciled-content-mismatch");
+    const mismatch = structureMismatch(insertedRange, expected, editor);
+    if (mismatch) return fail(mismatch);
+    return { inserted: true, batchDurationsMs: durations, insertedRange };
+  } catch {
+    // A partially accepted insertion must never be retried or destructively
+    // rolled back. Report failure and leave the accepted document intact.
+    return fail("block-insertion-failed");
+  }
+}
+
+function normalizeProseMirrorListItems(root: HTMLElement): void {
+  for (const list of Array.from(root.querySelectorAll("ol,ul"))) {
+    if (!/^(UL|OL)$/.test(list.parentElement?.tagName ?? "")) continue;
+    // Legacy HTML may put a nested list directly after its li, as a child of
+    // the outer list. Attach it to that preceding item before model parsing.
+    const precedingItem = list.previousElementSibling;
+    if (precedingItem?.tagName === "LI") precedingItem.appendChild(list);
+  }
+  for (const item of Array.from(root.querySelectorAll("li"))) {
+    if ((item.firstChild as Element | null)?.tagName === "P") continue;
+    // ProseMirror list_item requires a paragraph before any nested block.
+    // A legacy li containing only ul/ol otherwise loses its parent on parse.
+    const paragraph = root.ownerDocument.createElement("p");
+    while (item.firstChild && !(item.firstChild.nodeType === 1 &&
+      /^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|PRE)$/.test((item.firstChild as Element).tagName))) {
+      paragraph.appendChild(item.firstChild);
+    }
+    item.insertBefore(paragraph, item.firstChild);
+  }
+}
+
+function addTrailingBreakGuards(node: Node, existingContent: boolean): void {
+  if (node.nodeType !== 1) return;
+  for (const br of Array.from((node as Element).querySelectorAll("br"))) {
+    const parent = br.parentElement;
+    if (!parent || parent.lastChild !== br || (!existingContent && parent.childNodes.length === 1)) continue;
+    // DOMObserver ignores a newly added last-child BR as a browser artifact.
+    // A disposable trailing break protects the real hard_break before it. The
+    // editor consumes/rerenders this standard placeholder; it contains no text.
+    const guard = node.ownerDocument!.createElement("br");
+    guard.className = "ProseMirror-trailingBreak";
+    parent.appendChild(guard);
+  }
+}
+
+function trimSplitBoundary(node: Node, beginning: boolean): boolean {
+  if (node.nodeType === 3) return Boolean(node.textContent?.replace(/[\s\u200b\ufeff]/g, ""));
+  if (node.nodeType !== 1) return false;
+  const element = node as Element;
+  for (const br of Array.from(element.querySelectorAll("br.ProseMirror-trailingBreak"))) br.remove();
+  // cloneContents can create an empty boundary li/paragraph solely because the
+  // selected shortcut was its entire text. Remove that path, not real siblings.
+  let child = beginning ? element.firstChild : element.lastChild;
+  while (child) {
+    // Keep original standalone spaces between inline runs whenever this split
+    // block also contains real text. Only a wholly blank prefix/suffix is
+    // discarded, not a user's word separator or non-breaking space.
+    if (child.nodeType === 3 && child.textContent) break;
+    if (child.nodeType === 1 && (child.textContent ?? "").length &&
+      !/^(P|DIV|LI|UL|OL|BLOCKQUOTE|PRE)$/.test((child as Element).tagName) &&
+      /^[\s\u200b\ufeff]*$/.test(child.textContent ?? "")) break;
+    if (trimSplitBoundary(child, beginning)) break;
+    child.parentNode!.removeChild(child);
+    child = beginning ? element.firstChild : element.lastChild;
+  }
+  return Boolean(element.textContent?.replace(/[\s\u200b\ufeff]/g, "") || element.querySelector("img,br") || element.tagName === "IMG" || element.tagName === "BR");
+}
+
+function preserveSuffixListNumbering(original: Node, suffix: Node, endpoint: Node, hasSuffix: boolean): void {
+  if (!hasSuffix || original.nodeType !== 1 || (original as Element).tagName !== "OL") return;
+  let item = endpoint.nodeType === 1 ? endpoint as Element : endpoint.parentElement;
+  while (item && item.parentNode !== original) item = item.parentElement;
+  if (item?.tagName !== "LI") return;
+  const list = original as Element;
+  const items = Array.from(list.children).filter(child => child.tagName === "LI");
+  const suffixItems = (suffix as Element).children.length;
+  // A suffix from the remainder of the same li retains its number. If its
+  // empty boundary item was removed, start at the following original item.
+  const start = Number(list.getAttribute("start") ?? 1) + items.length - suffixItems;
+  if (start !== 1) (suffix as Element).setAttribute("start", String(start));
+}
+
 const MAX_SCAN_NODES = 4096;
 const MAX_SCAN_CHARACTERS = 256 * 1024;
 const BLOCKS = /^(P|DIV|H[1-6]|BLOCKQUOTE|PRE|LI)$/;
@@ -185,7 +350,7 @@ export async function insertHubSpotModelHtml(
     const caret = currentEditorRange(editor);
     if (!caret?.collapsed) return fail("selection-changed");
     const insertedRange = locateInsertedContent(editor, caret, root);
-    if (!insertedRange || !preservesStructure(insertedRange, root, editor)) {
+    if (!insertedRange || structureMismatch(insertedRange, root, editor)) {
       return fail("reconciled-structure-mismatch");
     }
     return { inserted: true, batchDurationsMs: durations, insertedRange };
@@ -250,7 +415,7 @@ function includeLeadingEmptyBlocks(range: Range, expected: HTMLElement, editor: 
   return range;
 }
 
-function preservesStructure(range: Range, expected: HTMLElement, editor: HTMLElement): boolean {
+function structureMismatch(range: Range, expected: HTMLElement, editor: HTMLElement): string | null {
   const actual = editor.ownerDocument.createElement("div");
   let fragment: Node = range.cloneContents();
   let ancestor = range.commonAncestorContainer;
@@ -265,22 +430,22 @@ function preservesStructure(range: Range, expected: HTMLElement, editor: HTMLEle
   }
   actual.append(fragment);
   for (const tag of ["ul", "ol", "li", "img"]) {
-    if (actual.querySelectorAll(tag).length !== expected.querySelectorAll(tag).length) return false;
+    if (actual.querySelectorAll(tag).length !== expected.querySelectorAll(tag).length) return "reconciled-list-image-count-mismatch";
   }
-  if (JSON.stringify(listStructure(actual)) !== JSON.stringify(listStructure(expected))) return false;
+  if (JSON.stringify(listStructure(actual)) !== JSON.stringify(listStructure(expected))) return "reconciled-list-hierarchy-mismatch";
   // Empty paragraphs and hard breaks matter even if textContent is identical.
   const blockCount = (root: Element) => root.querySelectorAll("p,div,h1,h2,h3,h4,h5,h6,blockquote,pre").length;
-  if (blockCount(actual) < blockCount(expected)) return false;
+  if (blockCount(actual) < blockCount(expected)) return "reconciled-block-count-mismatch";
   for (const selectors of ["strong,b", "em,i", "u", "s,strike,del"]) {
     const markedText = (root: HTMLElement) => Array.from(root.querySelectorAll(selectors))
       .filter(element => !element.parentElement?.closest(selectors))
       .map(element => element.textContent ?? "").join("").replace(/\s/g, "");
-    if (markedText(expected) !== markedText(actual)) return false;
+    if (markedText(expected) !== markedText(actual)) return "reconciled-inline-formatting-mismatch";
   }
   const breaks = (root: Element) => Array.from(root.querySelectorAll("br")).filter(br => !br.classList.contains("ProseMirror-trailingBreak") && br.parentElement?.childNodes.length !== 1).length;
-  if (breaks(actual) < breaks(expected)) return false;
+  if (breaks(actual) < breaks(expected)) return "reconciled-line-break-mismatch";
   const urls = (root: Element) => Array.from(root.querySelectorAll("a[href],img[src]")).map(element => element.getAttribute("href") ?? element.getAttribute("src"));
-  return JSON.stringify(urls(actual)) === JSON.stringify(urls(expected));
+  return JSON.stringify(urls(actual)) === JSON.stringify(urls(expected)) ? null : "reconciled-link-image-mismatch";
 }
 
 function listStructure(root: HTMLElement): unknown[] {

@@ -20,6 +20,7 @@ import {
   htmlToHubSpotPlainText,
   insertStructuredBatches,
   isHubSpotPage,
+  isHubSpotManagedComposer,
   isRemirrorEditor,
   shouldUseNativeHubSpotHtmlInsert,
   moveToNextHubSpotPlaceholder,
@@ -217,6 +218,69 @@ test("usa a inserção HTML nativa para macros moderadas no Remirror atual", () 
     editor.remove();
   }
 });
+
+test("reconhece um host interno como parte do compositor HubSpot gerenciado", () => {
+  const document = createDocument();
+  const root = document.createElement("section");
+  root.className = "ProseMirror";
+  root.setAttribute("data-remirror-root", "true");
+  const editor = document.createElement("div");
+  editor.setAttribute("contenteditable", "true");
+  root.append(editor);
+  document.body.append(root);
+  Object.defineProperty(document, "execCommand", { configurable: true, value: () => true });
+
+  const structuredMacros = [
+    // PJPJ: independent numbered and nested lists.
+    "<p>Seguiremos por estas etapas:</p><ol><li>Validação</li><li>Saque<ul><li>Documento</li></ul></li><li>Conclusão</li></ol><p>Depois da lista.</p>",
+    // PFPJ / PFMEI: paragraphs, bullets and links.
+    "<p>Documentos necessários.</p><ul><li>Comprovante</li><li><a href=\"https://example.test\">Receita Federal</a></li></ul><p>Envie por aqui.</p>",
+  ];
+
+  try {
+    assert.equal(isRemirrorEditor(editor), false);
+    assert.equal(isHubSpotManagedComposer(editor), true);
+    for (const html of structuredMacros) {
+      assert.equal(shouldUseNativeHubSpotHtmlInsert(editor, html), true);
+    }
+  } finally {
+    root.remove();
+  }
+});
+
+test("linhas vazias mantêm quebras sem NBSP/ZWSP/BOM ou marcadores técnicos", () => {
+  const document = createDocument();
+  const prepared = prepareHubSpotHtml(
+    '<p>Primeiro&nbsp;segundo 👩‍👩‍👧‍👦</p><p>&nbsp;</p><p> \u200b\ufeff </p>' +
+    '<p><br><br></p><p><span data-lilackeys-batch-end="test">\u200b</span></p><p>Final</p>',
+    document,
+  );
+  const root = document.createElement("div"); root.innerHTML = prepared.html;
+  assert.equal(root.children.length, 6);
+  assert.equal(root.querySelectorAll("p")[1].textContent, "");
+  assert.equal(root.querySelectorAll("p")[2].textContent, "");
+  assert.equal(root.querySelectorAll("p")[3].querySelectorAll("br").length, 2);
+  assert.equal(root.querySelectorAll("p")[4].textContent, "");
+  assert.equal(root.firstElementChild!.textContent, "Primeiro\u00a0segundo 👩‍👩‍👧‍👦");
+  assert.doesNotMatch(prepared.html, /\u200b|\ufeff|data-lilackeys-batch-end/);
+});
+
+test("reconhece atributo Remirror no ancestral do host interno", () => {
+  const document = createDocument();
+  const root = document.createElement("div");
+  root.setAttribute("data-remirror-content", "true");
+  const editor = document.createElement("div");
+  editor.setAttribute("contenteditable", "true");
+  root.append(editor);
+  document.body.append(root);
+  try {
+    assert.equal(isHubSpotManagedComposer(editor), true);
+    assert.equal(shouldInsertHubSpotAtomically(editor, "rich"), false);
+  } finally {
+    root.remove();
+  }
+});
+
 
 test("resolve o host completo quando target e foco herdam isContentEditable", () => {
   const { document } = parseHTML(`

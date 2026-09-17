@@ -3,6 +3,7 @@ import type { HubSpotPayloadPlan } from "../hubspotPolicy.ts";
 import {
   currentEditorRange,
   findPlaceholderInRange,
+  insertHubSpotBlockHtml,
   insertHubSpotModelHtml,
   sameRange,
   selectInsertedPlaceholder,
@@ -39,6 +40,14 @@ const MAX_IMAGE_DIMENSION = 1600;
 const PLACEHOLDER_SEARCH_MAX_NODES = 200;
 const PLACEHOLDER_SEARCH_MAX_CHARACTERS = 64 * 1024;
 const activeExpansions = new WeakSet<HTMLElement>();
+const HUBSPOT_MANAGED_COMPOSER_SELECTOR = [
+  ".ProseMirror",
+  ".remirror-editor",
+  ".tiptap",
+  "[data-remirror-editor]",
+  "[data-remirror-root]",
+  "[data-remirror-content]",
+].join(", ");
 
 const ALLOWED_ELEMENTS = new Set([
   "A",
@@ -268,8 +277,10 @@ async function performHubSpotExpansion(
     editor,
     prepared.html,
   )
-    ? insertSingleRichBatch(editor, prepared.html)
-    : isRemirrorEditor(editor)
+    ? plan.strategy === "structured" || plan.blockElements > 1
+      ? await insertHubSpotBlockHtml(editor, prepared.html)
+      : insertSingleRichBatch(editor, prepared.html)
+    : isHubSpotManagedComposer(editor)
       ? await insertHubSpotModelHtml(editor, prepared.html)
     : shouldInsertHubSpotAtomically(editor, plan.strategy)
       ? insertSingleRichBatch(editor, prepared.html)
@@ -291,24 +302,26 @@ async function performHubSpotExpansion(
 }
 
 export function isRemirrorEditor(editor: HTMLElement): boolean {
-  return (
-    editor.classList.contains("ProseMirror") ||
-    editor.matches(
-      '.remirror-editor, .tiptap, [data-remirror-editor], [data-remirror-root], [data-remirror-content]',
-    )
-  );
+  return editor.matches(HUBSPOT_MANAGED_COMPOSER_SELECTOR);
+}
+
+// HubSpot can focus a nested contenteditable while its managed ProseMirror /
+// Remirror root is an ancestor. Route using the composer ownership, not only
+// the focused node's CSS classes.
+export function isHubSpotManagedComposer(editor: HTMLElement): boolean {
+  return Boolean(editor.closest(HUBSPOT_MANAGED_COMPOSER_SELECTOR));
 }
 
 export function shouldInsertHubSpotAtomically(
   editor: HTMLElement,
   strategy: HubSpotPayloadPlan["strategy"],
 ): boolean {
-  return strategy === "rich" && !isRemirrorEditor(editor);
+  return strategy === "rich" && !isHubSpotManagedComposer(editor);
 }
 
-// The current HubSpot composer rewrites an untrusted paste event to plain text.
-// Native insertHTML keeps one moderate semantic fragment in its transaction.
-// This applies globally by size and structure, never by shortcut or content.
+// Moderate fragments use valid document-level sibling blocks so the managed
+// editor can reconcile structure rather than parsing blocks inside a paragraph.
+// This budget applies globally, never by shortcut, editor contents or name.
 export function shouldUseNativeHubSpotHtmlInsert(
   editor: HTMLElement,
   html: string,
@@ -330,7 +343,7 @@ export function shouldUseNativeHubSpotHtmlInsert(
     }
   }
   return (
-    isRemirrorEditor(editor) &&
+    isHubSpotManagedComposer(editor) &&
     structuralLength <= NATIVE_HUBSPOT_MAX_CHARACTERS &&
     estimateBatchElements(html) <= NATIVE_HUBSPOT_MAX_ELEMENTS &&
     images.length <= NATIVE_HUBSPOT_MAX_IMAGES &&
@@ -353,8 +366,12 @@ export function prepareHubSpotHtml(
   const preSanitizedImages = sanitizeMacroImages(html);
   const container = ownerDocument.createElement("div");
   container.innerHTML = preSanitizedImages.html;
+  // Old technical batch markers are not user content. Remove them before the
+  // sanitizer strips their identifying attribute and leaves a zero-width text.
+  for (const marker of Array.from(container.querySelectorAll("[data-lilackeys-batch-end]"))) marker.remove();
   const imageStats = sanitizeElements(container, ownerDocument);
   normalizeHubSpotBlockStructure(container, ownerDocument);
+  normalizeHubSpotBlankParagraphs(container, ownerDocument);
   addPlaceholderMarkers(container, ownerDocument);
   const sanitizedHtml = container.innerHTML;
   return {
@@ -364,6 +381,18 @@ export function prepareHubSpotHtml(
     rejectedImages:
       imageStats.rejectedImages + preSanitizedImages.removedImages,
   };
+}
+
+function normalizeHubSpotBlankParagraphs(root: HTMLElement, ownerDocument: Document): void {
+  for (const paragraph of Array.from(root.querySelectorAll("p"))) {
+    if (paragraph.closest("pre,code") || paragraph.querySelector("img,ul,ol,li") ||
+      !/^[\s\u200b\ufeff]*$/.test(paragraph.textContent ?? "")) continue;
+    // &nbsp;/ZWSP used as an empty-line filler must not become editable blank
+    // characters. Retain the paragraph and all intentional hard breaks.
+    const breaks = paragraph.querySelectorAll("br").length;
+    paragraph.replaceChildren();
+    for (let index = 0; index < Math.max(1, breaks); index += 1) paragraph.append(ownerDocument.createElement("br"));
+  }
 }
 
 function normalizeHubSpotBlockStructure(
@@ -1429,7 +1458,7 @@ function logHubSpotPerformance(
   if (!failed) return;
   const details = {
     strategy: plan.strategy,
-    editorType: editor && isRemirrorEditor(editor) ? "prosemirror" : "contenteditable",
+    editorType: editor && isHubSpotManagedComposer(editor) ? "prosemirror" : "contenteditable",
     blocks: prepared.batches.length ? plan.blockElements : 0,
     durationMs: roundDuration(preparationMs + batchDurationsMs.reduce((sum, value) => sum + value, 0)),
     fallbackReason: failureReason ?? "blocked-or-selection-unavailable",

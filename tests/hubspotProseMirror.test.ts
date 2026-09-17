@@ -14,6 +14,7 @@ import {
 } from "../src/content/editors/hubspotEditor.ts";
 import {
   insertHubSpotModelHtml,
+  insertHubSpotBlockHtml,
   selectInsertedPlaceholder,
   shortcutRange,
 } from "../src/content/editors/hubspotInsertion.ts";
@@ -473,6 +474,187 @@ test("ProseMirror real não duplica colagem cancelada ou parcialmente aceita", a
       assert.equal(result.failureReason, partial ? "reconciled-structure-mismatch" : "paste-cancelled-without-insertion");
       assert.equal(fallbacks, 0);
       assert.equal(harness.view.state.doc.textContent, partial ? "Parcial" : "CODE");
+    } finally { harness.close(); }
+  }
+});
+
+const sequentialMacro = '<p>Seguiremos por estas etapas:</p>' +
+  '<ol><li><p><strong>Validação</strong></p></li><li><p>Saque</p></li><li><p>Conclusão</p></li></ol>' +
+  '<p><br></p><p>Preencha o termo.</p><p>Documentos %DOCUMENTO%.</p>' +
+  '<ul><li><p>Contrato</p></li><li><p>Certificado</p><ul><li><p>Sócios</p></li></ul></li></ul>' +
+  '<p><a href="https://example.test/termo"><strong>Termo</strong></a></p>' +
+  '<ol><li><p>Outra etapa</p></li></ol><p>Fim %PROTOCOLO% 🫡</p>';
+
+test("observador ProseMirror real reproduz achatamento de blocos inseridos dentro de p", async () => {
+  const harness = createHarness("<p><strong>BvTT CODE fechamento</strong></p>");
+  try {
+    harness.selectTrigger();
+    const selected = harness.window.getSelection()!.getRangeAt(0);
+    const content = selected.createContextualFragment("<p>Etapas:</p><ol><li>Primeiro</li></ol><p>Final</p>");
+    selected.deleteContents();
+    selected.insertNode(content);
+    await harness.yieldFrame(); await harness.yieldFrame();
+    assert.equal(harness.view.state.doc.childCount, 1);
+    assert.equal(harness.view.dom.querySelector("ol"), null);
+    assert.ok(harness.view.state.doc.textContent.includes("Etapas:PrimeiroFinal"));
+  } finally { harness.close(); }
+});
+
+test("inserção em blocos irmãos preserva PJPJ após BvTT, no meio/final de p, inline e li", async () => {
+  for (const initial of [
+    '<p>Olá, Lucas!</p><p>Orientações.</p><p>Att,<br><strong>GustavoCODE</strong></p>',
+    '<p>BvTT <strong><em>preenchido CODE fechamento</em></strong></p><p>Att,<br>Gustavo</p>',
+    '<p>ANTES</p><p>CODE</p><p>DEPOIS</p>',
+    '<ul><li><p>Anterior</p></li><li><p><em>LucasCODE</em></p></li><li><p>Posterior</p></li></ul>',
+    '<ol start="4"><li><p>Anterior</p></li><li><p>CODE</p></li><li><p>Posterior</p></li></ol>',
+    '<p>CODE</p>',
+  ]) {
+    const harness = createHarness(initial);
+    try {
+      harness.selectTrigger();
+      const before = harness.view.state.doc.textContent.replace("CODE", "");
+      const prepared = prepareHubSpotHtml(sequentialMacro, harness.window.document);
+      const expected = harness.window.document.createElement("div");
+      expected.innerHTML = prepared.html;
+      const result = await insertHubSpotBlockHtml(harness.view.dom, prepared.html, { yieldFrame: harness.yieldFrame });
+      assert.equal(result.inserted, true, result.failureReason);
+      assert.equal(harness.view.state.doc.textContent.replace(expected.textContent!, ""), before);
+      const macroLists = Array.from(harness.view.dom.querySelectorAll(":scope > ol"));
+      assert.equal(macroLists.some(list => list.children.length === 3 && list.textContent === "ValidaçãoSaqueConclusão"), true);
+      assert.ok(harness.view.dom.querySelector(":scope > ul ul"));
+      assert.equal(harness.view.dom.querySelectorAll("li:empty").length, 0);
+      assert.equal(harness.view.dom.querySelector("a strong")?.textContent, "Termo");
+      assert.equal(harness.window.getSelection()!.isCollapsed, true);
+      assert.equal(selectInsertedPlaceholder(harness.view.dom, result.insertedRange!), true);
+      assert.equal(harness.window.getSelection()!.toString(), "%DOCUMENTO%");
+      harness.window.document.dispatchEvent(new harness.window.Event("selectionchange"));
+      harness.view.dispatch(harness.view.state.tr.insertText("preenchido"));
+      const tab = new harness.window.KeyboardEvent("keydown", { key: "Tab", cancelable: true });
+      assert.equal(handleHubSpotPlaceholderTab(tab, harness.view.dom, harness.window.getSelection()), true);
+      assert.equal(harness.window.getSelection()!.toString(), "%PROTOCOLO%");
+      if (initial.includes('start="4"')) {
+        assert.equal(harness.view.dom.lastElementChild?.getAttribute("start"), "6");
+      }
+    } finally { harness.close(); }
+  }
+});
+
+test("expansão completa usa blocos irmãos mesmo com execCommand e colagem que achata HTML", async () => {
+  const harness = createHarness('<p><strong>BvTT CODE fechamento</strong></p><p>Att,<br>Gustavo</p>');
+  try {
+    let nativeCalls = 0;
+    Object.defineProperty(harness.window.document, "execCommand", { value: () => { nativeCalls += 1; return true; } });
+    harness.view.setProps({ handlePaste: view => { view.dispatch(view.state.tr.insertText("achatado")); return true; } });
+    harness.selectTrigger(); harness.window.getSelection()!.collapseToEnd();
+    const snapshot = buildMacroSnapshot([{ id: "m", nome: "Fixture", atalho: "CODE", textoExpandido: sequentialMacro }]);
+    assert.equal(await expandHubSpotMacro(harness.view.dom, snapshot), "expanded");
+    assert.equal(nativeCalls, 0);
+    assert.equal(harness.view.dom.querySelectorAll(":scope > ol").length, 2);
+    assert.equal(harness.view.state.doc.lastChild!.textContent, "Att,Gustavo");
+    assert.equal(harness.window.getSelection()!.toString(), "%DOCUMENTO%");
+  } finally { harness.close(); }
+});
+
+test("blocos irmãos normalizam sublistas legadas e preservam hard_break no fim do parágrafo", async () => {
+  const harness = createHarness('<p>Antes<br>CODE Depois<br></p>');
+  try {
+    harness.selectTrigger();
+    const html = '<p>Etapas<br></p><ul><li>Documento</li><ul><li>Contrato</li></ul>' +
+      '<li><ul><li>Comprovante</li></ul></li></ul><p>Fim<br><br></p>';
+    const result = await insertHubSpotBlockHtml(harness.view.dom, html, { yieldFrame: harness.yieldFrame });
+    assert.equal(result.inserted, true, result.failureReason);
+    const lists = harness.view.dom.querySelectorAll("ul");
+    assert.equal(lists.length, 3);
+    assert.equal(lists[1].parentElement!.tagName, "LI");
+    assert.equal(lists[2].parentElement!.tagName, "LI");
+    assert.equal(harness.view.dom.querySelector("li ul")!.previousElementSibling!.tagName, "P");
+    const hardBreaks: number[] = [];
+    harness.view.state.doc.forEach(node => {
+      if (node.type.name === "paragraph") {
+        let breaks = 0; node.forEach(child => { if (child.type.name === "hard_break") breaks += 1; });
+        hardBreaks.push(breaks);
+      }
+    });
+    assert.deepEqual(hardBreaks, [1, 1, 2, 1]);
+    assert.equal(harness.view.dom.querySelector("li:empty"), null);
+  } finally { harness.close(); }
+});
+
+test("blocos irmãos não reinserem conteúdo quando foco muda após aceitação", async () => {
+  const harness = createHarness();
+  try {
+    harness.selectTrigger();
+    let yields = 0;
+    const result = await insertHubSpotBlockHtml(harness.view.dom, '<p>Primeiro</p><p>Segundo</p>', {
+      yieldFrame: async () => {
+        await harness.yieldFrame();
+        if (yields++ === 0) {
+          const field = harness.window.document.createElement("input");
+          harness.window.document.body.append(field); field.focus();
+        }
+      },
+    });
+    assert.equal(result.inserted, false);
+    assert.equal(harness.view.state.doc.textContent, "PrimeiroSegundo");
+  } finally { harness.close(); }
+});
+
+test("blocos irmãos limitam inspeção do bloco anterior sem destruir o atalho", async () => {
+  const harness = createHarness('<p>' + 'antes '.repeat(44000) + 'CODE</p>');
+  try {
+    harness.selectTrigger();
+    const result = await insertHubSpotBlockHtml(harness.view.dom, '<p>Macro</p>', { yieldFrame: harness.yieldFrame });
+    assert.equal(result.inserted, false);
+    assert.equal(result.failureReason, "existing-block-limit");
+    assert.ok(harness.view.state.doc.textContent.endsWith("CODE"));
+  } finally { harness.close(); }
+});
+
+test("macro rich com dois parágrafos dentro do placeholder preenchido mantém linhas e cursor", async () => {
+  const harness = createHarness('<p>Boa tarde.</p><p><span>CODE</span></p><p>Att,<br>Gustavo</p>');
+  try {
+    Object.defineProperty(harness.window.document, "execCommand", { value: () => { throw Error("native insert must not run"); } });
+    harness.selectTrigger(); harness.window.getSelection()!.collapseToEnd();
+    const snapshot = buildMacroSnapshot([{ id: "m", nome: "Fixture", atalho: "CODE", textoExpandido: '<p>Saque confirmado!</p><p>Veja o <strong>Histórico</strong>.</p>' }]);
+    assert.equal(snapshot.entries[0].hubspotPlan.strategy, "rich");
+    assert.equal(await expandHubSpotMacro(harness.view.dom, snapshot), "expanded");
+    assert.equal(harness.view.state.doc.childCount, 4);
+    assert.equal(harness.view.state.doc.child(1).textContent, "Saque confirmado!");
+    assert.equal(harness.view.state.doc.child(2).textContent, "Veja o Histórico.");
+    assert.equal(harness.view.state.doc.child(3).textContent, "Att,Gustavo");
+    const after = harness.window.document.createRange();
+    const caret = harness.window.getSelection()!.getRangeAt(0);
+    after.setStart(caret.endContainer, caret.endOffset); after.setEnd(harness.view.dom, harness.view.dom.childNodes.length);
+    assert.equal(after.toString(), "Att,Gustavo");
+    assert.doesNotMatch(harness.view.state.doc.textContent, /\u200b|\ufeff/);
+  } finally { harness.close(); }
+});
+
+test("espaços isolados ao redor do atalho não criam parágrafos técnicos vazios", async () => {
+  const harness = createHarness('<p> \u00a0CODE\u00a0 </p>');
+  try {
+    harness.selectTrigger();
+    const result = await insertHubSpotBlockHtml(harness.view.dom, '<p>Primeiro</p><p>Segundo</p>', { yieldFrame: harness.yieldFrame });
+    assert.equal(result.inserted, true, result.failureReason);
+    assert.equal(harness.view.state.doc.childCount, 2);
+    assert.equal(harness.view.state.doc.textContent, "PrimeiroSegundo");
+  } finally { harness.close(); }
+});
+
+test("divisão conserva separadores inline e a lista existente após um item aninhado", async () => {
+  for (const initial of [
+    '<p><strong>Antes</strong> CODE <em>Depois</em></p>',
+    '<ul><li><p>Anterior</p><ul><li><p>Dentro CODE restante</p></li><li><p>Último</p></li></ul></li><li><p>Depois</p></li></ul>',
+  ]) {
+    const harness = createHarness(initial);
+    try {
+      harness.selectTrigger();
+      const before = harness.view.state.doc.textContent.replace("CODE", "");
+      const result = await insertHubSpotBlockHtml(harness.view.dom, '<p>Macro</p><p>Fim</p>', { yieldFrame: harness.yieldFrame });
+      assert.equal(result.inserted, true, result.failureReason);
+      assert.equal(harness.view.state.doc.textContent.replace("MacroFim", ""), before);
+      assert.equal(harness.view.dom.querySelector("li:empty"), null);
+      if (initial.includes("<ul>")) assert.equal(harness.view.dom.querySelectorAll(":scope > ul").length, 2);
     } finally { harness.close(); }
   }
 });
