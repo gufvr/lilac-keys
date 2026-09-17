@@ -21,7 +21,7 @@ import {
   insertStructuredBatches,
   isHubSpotPage,
   isRemirrorEditor,
-  measureHubSpotResponsiveness,
+  shouldUseNativeHubSpotHtmlInsert,
   moveToNextHubSpotPlaceholder,
   prepareHubSpotHtml,
   runExclusiveHubSpotExpansion,
@@ -172,7 +172,7 @@ test("localiza estruturas atuais com contenteditable vazio e editores semântico
   }
 });
 
-test("usa inserção atômica no Remirror sem marcador técnico", () => {
+test("reserva inserção nativa para editores legados e rich", () => {
   const { document, window } = parseHTML(`
     <html><body>
       <div id="remirror" class="remirror-editor ProseMirror" contenteditable="true"></div>
@@ -184,9 +184,132 @@ test("usa inserção atômica no Remirror sem marcador técnico", () => {
   const legacy = document.querySelector("#legacy") as unknown as HTMLElement;
 
   assert.equal(isRemirrorEditor(remirror), true);
-  assert.equal(shouldInsertHubSpotAtomically(remirror, "structured"), true);
+  assert.equal(shouldInsertHubSpotAtomically(remirror, "structured"), false);
+  assert.equal(shouldInsertHubSpotAtomically(remirror, "rich"), false);
   assert.equal(shouldInsertHubSpotAtomically(legacy, "structured"), false);
   assert.equal(shouldInsertHubSpotAtomically(legacy, "rich"), true);
+});
+
+test("usa a inserção HTML nativa para macros moderadas no Remirror atual", () => {
+  const document = createDocument();
+  const editor = document.createElement("div");
+  editor.className = "ProseMirror";
+  document.body.append(editor);
+  try {
+    Object.defineProperty(document, "execCommand", { configurable: true, value: () => true });
+    assert.equal(shouldUseNativeHubSpotHtmlInsert(editor, "<p>Olá</p><p>Até mais</p>"), true);
+    assert.equal(
+      shouldUseNativeHubSpotHtmlInsert(
+        editor,
+        "<ol><li>Primeiro</li><li>Segundo<ul><li>Aninhado</li></ul></li></ol>".repeat(15),
+      ),
+      true,
+    );
+    assert.equal(
+      shouldUseNativeHubSpotHtmlInsert(
+        editor,
+        `<p>Exemplo do documento:</p><p><img src="data:image/png;base64,${"A".repeat(150 * 1024)}" alt="Documento"></p><p>Envie por aqui.</p>`,
+      ),
+      true,
+    );
+    assert.equal(shouldUseNativeHubSpotHtmlInsert(editor, "<p>" + "x".repeat(17 * 1024) + "</p>"), false);
+  } finally {
+    editor.remove();
+  }
+});
+
+test("resolve o host completo quando target e foco herdam isContentEditable", () => {
+  const { document } = parseHTML(`
+    <html><body><div id="editor" class="ProseMirror" contenteditable="true">
+      <p><strong><span id="inner">texto</span></strong></p>
+    </div></body></html>`);
+  const editor = document.querySelector("#editor")!;
+  const inner = document.querySelector("#inner")!;
+  for (const element of [inner, inner.parentElement!, inner.parentElement!.parentElement!]) {
+    Object.defineProperty(element, "isContentEditable", { value: true });
+  }
+  const selection = {
+    anchorNode: inner.firstChild,
+    focusNode: inner.firstChild,
+  } as unknown as Selection;
+
+  for (const lookup of [
+    { eventTarget: inner, eventPath: [], activeElement: editor },
+    { eventTarget: inner.firstChild, eventPath: [], activeElement: editor },
+    { eventTarget: document.body, eventPath: [inner, editor], activeElement: document.body },
+    { eventTarget: document.body, eventPath: [], activeElement: inner },
+  ]) {
+    assert.equal(
+      findHubSpotEditor({ ...lookup, selection, hostname: "app.hubspot.com" }),
+      editor,
+    );
+  }
+});
+
+test("rejeita subárvores não editáveis mesmo com host no path ou activeElement", () => {
+  const { document } = parseHTML(`
+    <html><body><div id="editor" class="ProseMirror" contenteditable="true">
+      <p id="editable">texto</p>
+      <span contenteditable="false"><span id="locked">protegido</span></span>
+    </div></body></html>`);
+  const editor = document.querySelector("#editor")!;
+  const locked = document.querySelector("#locked")!;
+  const editable = document.querySelector("#editable")!;
+
+  for (const [anchorNode, focusNode] of [
+    [locked.firstChild, locked.firstChild],
+    [editable.firstChild, locked.firstChild],
+    [locked.firstChild, editable.firstChild],
+  ]) {
+    assert.equal(
+      findHubSpotEditor({
+        eventTarget: locked,
+        eventPath: [locked, locked.parentElement!, editor],
+        activeElement: editor,
+        selection: { anchorNode, focusNode } as unknown as Selection,
+        hostname: "app.hubspot.com",
+      }),
+      null,
+    );
+  }
+});
+
+test("respeita editores aninhados independentes e seus limites de seleção", () => {
+  const { document } = parseHTML(`
+    <html><body><div id="outer" contenteditable="true">
+      <p id="outside">anterior</p>
+      <div contenteditable="false"><div id="inner" class="ProseMirror" contenteditable="true">
+        <p><span id="value">interno</span></p>
+      </div></div>
+    </div></body></html>`);
+  const outer = document.querySelector("#outer")!;
+  const inner = document.querySelector("#inner")!;
+  const value = document.querySelector("#value")!;
+  Object.defineProperty(value, "isContentEditable", { value: true });
+
+  assert.equal(
+    findHubSpotEditor({
+      eventTarget: outer,
+      eventPath: [outer, value, inner],
+      activeElement: outer,
+      selection: { anchorNode: value.firstChild, focusNode: value.firstChild } as unknown as Selection,
+      hostname: "app.hubspot.com",
+    }),
+    inner,
+  );
+  assert.equal(
+    findHubSpotEditor({
+      eventTarget: value,
+      eventPath: [value, inner, outer],
+      activeElement: inner,
+      selection: {
+        anchorNode: value.firstChild,
+        focusNode: document.querySelector("#outside")!.firstChild,
+      } as unknown as Selection,
+      hostname: "app.hubspot.com",
+    }),
+    null,
+  );
 });
 
 test("rejeita caixas de pesquisa e campos fora da seleção", () => {
@@ -328,31 +451,6 @@ test("prepara lotes estruturados de 5, 25, 50 e 100 KB", (context) => {
     context.diagnostic(
       `${kilobytes} KB: ${prepared.batches.length} lotes em ${durationMs.toFixed(1)} ms`,
     );
-  }
-});
-
-test("mede responsividade depois de dois frames sem conteúdo da macro", () => {
-  const callbacks: FrameRequestCallback[] = [];
-  const messages: unknown[][] = [];
-  const originalInfo = console.info;
-  console.info = (...args: unknown[]) => messages.push(args);
-  try {
-    measureHubSpotResponsiveness(
-      classifyHubSpotPayload("<p>Teste</p>"),
-      performance.now(),
-      (callback) => {
-        callbacks.push(callback);
-        return callbacks.length;
-      },
-    );
-    assert.equal(callbacks.length, 1);
-    callbacks.shift()!(0);
-    assert.equal(callbacks.length, 1);
-    callbacks.shift()!(16);
-    assert.equal(messages.length, 1);
-    assert.doesNotMatch(JSON.stringify(messages), /Teste/);
-  } finally {
-    console.info = originalInfo;
   }
 });
 

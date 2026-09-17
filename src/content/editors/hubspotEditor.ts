@@ -1,6 +1,16 @@
 import { findIndexedMacro, type MacroSnapshot } from "../macroIndex.ts";
 import type { HubSpotPayloadPlan } from "../hubspotPolicy.ts";
 import {
+  currentEditorRange,
+  findPlaceholderInRange,
+  insertHubSpotModelHtml,
+  sameRange,
+  selectInsertedPlaceholder,
+  shortcutRange,
+  textBeforeHubSpotCaret,
+  type HubSpotInsertionResult,
+} from "./hubspotInsertion.ts";
+import {
   classifyMacroImageSource,
   MAX_EMBEDDED_IMAGE_BYTES,
   MAX_MACRO_IMAGES,
@@ -18,6 +28,9 @@ const STRUCTURED_BATCH_MAX_CHARACTERS = 8 * 1024;
 const STRUCTURED_BATCH_MAX_ELEMENTS = 30;
 const STRUCTURED_ATOMIC_MAX_CHARACTERS = 4 * 1024;
 const STRUCTURED_ATOMIC_MAX_ELEMENTS = 90;
+const NATIVE_HUBSPOT_MAX_CHARACTERS = 16 * 1024;
+const NATIVE_HUBSPOT_MAX_ELEMENTS = 240;
+const NATIVE_HUBSPOT_MAX_IMAGES = 3;
 const STRUCTURED_MAX_BATCHES = 100;
 const MAX_SAFE_IMAGES = MAX_MACRO_IMAGES;
 const MAX_EMBEDDED_IMAGE_HTML_CHARACTERS =
@@ -164,7 +177,9 @@ export function findHubSpotEditor(
       anchorNode &&
       focusNode &&
       editor.contains(anchorNode) &&
-      editor.contains(focusNode)
+      editor.contains(focusNode) &&
+      findEditingHost(anchorNode) === editor &&
+      findEditingHost(focusNode) === editor
     ) {
       return editor;
     }
@@ -201,16 +216,14 @@ async function performHubSpotExpansion(
   snapshot: MacroSnapshot,
 ): Promise<HubSpotExpansionResult> {
   const startedAt = performance.now();
+  const originalRange = currentEditorRange(editor)?.cloneRange();
+  if (!originalRange?.collapsed) return "failed";
   const valueBeforeCursor = getTextBeforeCursor(
     editor,
     snapshot.maxShortcutLength,
   );
   const match = findIndexedMacro(snapshot, valueBeforeCursor);
   if (!match) {
-    console.warn("LilacKeys: atalho não encontrado no cache do HubSpot", {
-      cachedMacros: snapshot.entries.length,
-      host: window.location.hostname || "related-frame",
-    });
     return insertTextAtSelection(editor, " ") ? "no-match" : "failed";
   }
 
@@ -223,30 +236,42 @@ async function performHubSpotExpansion(
       0,
       [performance.now() - startedAt],
       true,
+      "payload-limit",
+      editor,
     );
     return "blocked";
   }
 
   if (plan.strategy === "structured") await yieldToBrowser();
   const preparationStartedAt = performance.now();
-  const prepared = prepareHubSpotHtml(match.hubspotHtml);
+  const prepared = prepareHubSpotHtml(match.hubspotHtml, editor.ownerDocument);
   const preparationMs = performance.now() - preparationStartedAt;
   if (
     prepared.batches.length === 0 ||
     prepared.batches.length > STRUCTURED_MAX_BATCHES
   ) {
-    logHubSpotPerformance(plan, prepared, preparationMs, [], true);
+    logHubSpotPerformance(plan, prepared, preparationMs, [], true, "batch-limit", editor);
     return "blocked";
   }
   if (plan.strategy === "structured") await yieldToBrowser();
 
+  if (!sameRange(originalRange, currentEditorRange(editor))) {
+    logHubSpotPerformance(plan, prepared, preparationMs, [], true, "selection-changed", editor);
+    return "failed";
+  }
   if (!selectCharactersBeforeCursor(editor, match.shortcutLength)) {
-    logHubSpotPerformance(plan, prepared, preparationMs, [], true);
+    logHubSpotPerformance(plan, prepared, preparationMs, [], true, "selection-unavailable", editor);
     return "failed";
   }
 
-  const insertion =
-    shouldInsertHubSpotAtomically(editor, plan.strategy)
+  const insertion: HubSpotInsertionResult = shouldUseNativeHubSpotHtmlInsert(
+    editor,
+    prepared.html,
+  )
+    ? insertSingleRichBatch(editor, prepared.html)
+    : isRemirrorEditor(editor)
+      ? await insertHubSpotModelHtml(editor, prepared.html)
+    : shouldInsertHubSpotAtomically(editor, plan.strategy)
       ? insertSingleRichBatch(editor, prepared.html)
       : await insertStructuredBatches(editor, prepared.batches);
   logHubSpotPerformance(
@@ -256,10 +281,11 @@ async function performHubSpotExpansion(
     insertion.batchDurationsMs,
     !insertion.inserted,
     insertion.failureReason,
+    editor,
   );
   if (insertion.inserted) {
-    selectFirstHubSpotPlaceholder(editor);
-    measureHubSpotResponsiveness(plan, performance.now());
+    if (insertion.insertedRange) selectInsertedPlaceholder(editor, insertion.insertedRange);
+    else selectFirstHubSpotPlaceholder(editor);
   }
   return insertion.inserted ? "expanded" : "failed";
 }
@@ -268,7 +294,7 @@ export function isRemirrorEditor(editor: HTMLElement): boolean {
   return (
     editor.classList.contains("ProseMirror") ||
     editor.matches(
-      '.remirror-editor, [data-remirror-editor], [data-remirror-root], [data-remirror-content]',
+      '.remirror-editor, .tiptap, [data-remirror-editor], [data-remirror-root], [data-remirror-content]',
     )
   );
 }
@@ -277,7 +303,40 @@ export function shouldInsertHubSpotAtomically(
   editor: HTMLElement,
   strategy: HubSpotPayloadPlan["strategy"],
 ): boolean {
-  return strategy === "rich" || isRemirrorEditor(editor);
+  return strategy === "rich" && !isRemirrorEditor(editor);
+}
+
+// The current HubSpot composer rewrites an untrusted paste event to plain text.
+// Native insertHTML keeps one moderate semantic fragment in its transaction.
+// This applies globally by size and structure, never by shortcut or content.
+export function shouldUseNativeHubSpotHtmlInsert(
+  editor: HTMLElement,
+  html: string,
+): boolean {
+  const payload = editor.ownerDocument.createElement("div");
+  payload.innerHTML = html;
+  const images = Array.from(payload.querySelectorAll("img"));
+  let embeddedBytes = 0;
+  let structuralLength = html.length;
+  for (const image of images) {
+    const source = image.getAttribute("src") ?? "";
+    const classified = classifyMacroImageSource(source);
+    if (!classified) return false;
+    if (classified.kind === "embedded") {
+      embeddedBytes += classified.bytes;
+      // Base64 is payload, not structural complexity. The native editor gets
+      // the original source; this subtraction is only for route selection.
+      structuralLength -= source.length - "data:image/embedded".length;
+    }
+  }
+  return (
+    isRemirrorEditor(editor) &&
+    structuralLength <= NATIVE_HUBSPOT_MAX_CHARACTERS &&
+    estimateBatchElements(html) <= NATIVE_HUBSPOT_MAX_ELEMENTS &&
+    images.length <= NATIVE_HUBSPOT_MAX_IMAGES &&
+    embeddedBytes <= MAX_EMBEDDED_IMAGE_BYTES &&
+    typeof editor.ownerDocument.execCommand === "function"
+  );
 }
 
 export function sanitizeHubSpotHtml(
@@ -403,6 +462,9 @@ function findEditingHost(source: EventTarget | null): HTMLElement | null {
   while (element) {
     if (visited.has(element)) return null;
     visited.add(element);
+    if (element.getAttribute("contenteditable")?.toLowerCase() === "false") {
+      return null;
+    }
     if (isHubSpotEditingHost(element)) return element;
     if (element.parentElement) {
       element = element.parentElement;
@@ -418,8 +480,9 @@ function findEditingHost(source: EventTarget | null): HTMLElement | null {
 }
 
 function getEventSourceElement(source: EventTarget | null): HTMLElement | null {
-  if (source instanceof HTMLElement) return source;
   const possibleNode = source as Node | null;
+  // DOM nodes can originate in another frame; avoid a realm-specific instanceof.
+  if (possibleNode?.nodeType === 1) return possibleNode as HTMLElement;
   return possibleNode?.nodeType === 3
     ? (possibleNode.parentElement as HTMLElement | null)
     : null;
@@ -435,7 +498,9 @@ function isHubSpotEditingHost(element: HTMLElement): boolean {
     element.getAttribute("data-lexical-editor") === "true" ||
     element.classList.contains("ProseMirror") ||
     element.classList.contains("tiptap");
-  return explicitlyEditable || element.isContentEditable || semanticallyEditable;
+  // isContentEditable is inherited by every inline descendant of an editor.
+  // Only an explicit editing root can own insertion and placeholder navigation.
+  return explicitlyEditable || semanticallyEditable;
 }
 
 function isExcludedField(editor: HTMLElement): boolean {
@@ -855,9 +920,15 @@ export function moveToNextHubSpotPlaceholder(
   options: Pick<PlaceholderSelectionOptions, "createRange"> = {},
 ): boolean {
   const anchorNode = selection?.anchorNode;
-  if (!selection || !anchorNode || !editor.contains(anchorNode)) return false;
+  const focusNode = selection?.focusNode ?? anchorNode;
+  if (!selection || !anchorNode || !focusNode || !editor.contains(anchorNode) || !editor.contains(focusNode)) return false;
 
-  const start = getForwardTextPosition(editor, anchorNode, selection.anchorOffset);
+  const selectedRange = selection.rangeCount ? selection.getRangeAt(0) : null;
+  const start = getForwardTextPosition(
+    editor,
+    selectedRange?.endContainer ?? anchorNode,
+    selectedRange?.endOffset ?? selection.anchorOffset,
+  );
   if (!start) return false;
   const currentMarker = findPlaceholderAncestor(anchorNode, editor);
   const nextMarker = findNextMarkedPlaceholder(editor, start, currentMarker);
@@ -865,14 +936,27 @@ export function moveToNextHubSpotPlaceholder(
   if (nextMarker) {
     range.selectNodeContents(nextMarker);
   } else {
-    const match = findNextPlaceholderText(editor, start);
-    if (!match) return false;
-    range.setStart(match.node, match.start);
-    range.setEnd(match.node, match.end);
+    if (selectedRange) {
+      const forwardRange = selectedRange.cloneRange();
+      forwardRange.collapse(false);
+      forwardRange.setEnd(editor, editor.childNodes.length);
+      const next = findPlaceholderInRange(editor, forwardRange, PLACEHOLDER_SEARCH_MAX_CHARACTERS);
+      if (!next) return false;
+      range.setStart(next.startContainer, next.startOffset);
+      range.setEnd(next.endContainer, next.endOffset);
+    } else {
+      const match = findNextPlaceholderText(editor, start);
+      if (!match) return false;
+      range.setStart(match.node, match.start);
+      range.setEnd(match.node, match.end);
+    }
   }
 
   selection.removeAllRanges();
   selection.addRange(range);
+  // Keep the ProseMirror selection aligned when the user types immediately.
+  const EventClass = editor.ownerDocument.defaultView?.Event;
+  if (EventClass) editor.ownerDocument.dispatchEvent(new EventClass("selectionchange"));
   return true;
 }
 
@@ -912,7 +996,7 @@ function findNextMarkedPlaceholder(
     inspectedCharacters <= PLACEHOLDER_SEARCH_MAX_CHARACTERS
   ) {
     const marker = findPlaceholderAncestor(node, editor);
-    if (marker && marker !== currentMarker) return marker;
+    if (marker && marker !== currentMarker && /%[^%\r\n]+%/.test(marker.textContent ?? "")) return marker;
     inspectedNodes += 1;
     inspectedCharacters += node.data.length;
     node = findNextTextNode(editor, node);
@@ -1010,41 +1094,19 @@ function renderPlainText(node: Node): string {
 }
 
 function getTextBeforeCursor(editor: HTMLElement, maxLength: number): string {
-  const selection = window.getSelection();
-  if (
-    !selection ||
-    selection.rangeCount === 0 ||
-    !selection.anchorNode ||
-    !editor.contains(selection.anchorNode) ||
-    maxLength <= 0
-  ) {
-    return "";
-  }
-  const range = selection.getRangeAt(0).cloneRange();
-  range.selectNodeContents(editor);
-  range.setEnd(selection.anchorNode, selection.anchorOffset);
-  return range.toString().slice(-maxLength);
+  return textBeforeHubSpotCaret(editor, maxLength);
 }
 
 function selectCharactersBeforeCursor(
   editor: HTMLElement,
   length: number,
 ): boolean {
-  const selection = window.getSelection();
-  if (!selection?.anchorNode || !editor.contains(selection.anchorNode)) return false;
-  const editableSelection = selection as Selection & {
-    modify?: (
-      alter: "move" | "extend",
-      direction: "forward" | "backward",
-      granularity: "character",
-    ) => void;
-  };
-  if (!editableSelection.modify) return false;
-  editableSelection.collapseToEnd();
-  for (let index = 0; index < length; index += 1) {
-    editableSelection.modify("extend", "backward", "character");
-  }
-  return !editableSelection.isCollapsed;
+  const range = shortcutRange(editor, length);
+  const selection = editor.ownerDocument.defaultView?.getSelection();
+  if (!range || range.toString().length !== length || !selection) return false;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return !selection.isCollapsed;
 }
 
 function insertHtmlAtSelection(editor: HTMLElement, html: string): boolean {
@@ -1361,40 +1423,18 @@ function logHubSpotPerformance(
   preparationMs: number,
   batchDurationsMs: readonly number[],
   failed: boolean,
-  failureReason?: StructuredInsertionResult["failureReason"],
+  failureReason?: string,
+  editor?: HTMLElement,
 ): void {
+  if (!failed) return;
   const details = {
     strategy: plan.strategy,
-    characters: plan.characters,
-    estimatedElements: plan.estimatedElements,
-    complexity: plan.complexity,
-    batches: prepared.batches.length,
-    acceptedImages: prepared.acceptedImages,
-    rejectedImages: prepared.rejectedImages,
-    preparationMs: roundDuration(preparationMs),
-    batchDurationsMs: batchDurationsMs.map(roundDuration),
-    ...(failureReason ? { failureReason } : {}),
+    editorType: editor && isRemirrorEditor(editor) ? "prosemirror" : "contenteditable",
+    blocks: prepared.batches.length ? plan.blockElements : 0,
+    durationMs: roundDuration(preparationMs + batchDurationsMs.reduce((sum, value) => sum + value, 0)),
+    fallbackReason: failureReason ?? "blocked-or-selection-unavailable",
   };
-  if (failed) console.warn("LilacKeys: expansão no HubSpot não concluída", details);
-  else console.info("LilacKeys: expansão no HubSpot concluída", details);
-}
-
-export function measureHubSpotResponsiveness(
-  plan: HubSpotPayloadPlan,
-  startedAt: number,
-  schedule: (callback: FrameRequestCallback) => number = requestAnimationFrame,
-): void {
-  schedule(() => {
-    schedule(() => {
-      console.info("LilacKeys: responsividade após expansão no HubSpot", {
-        strategy: plan.strategy,
-        characters: plan.characters,
-        estimatedElements: plan.estimatedElements,
-        complexity: plan.complexity,
-        nextFramesMs: roundDuration(performance.now() - startedAt),
-      });
-    });
-  });
+  console.warn("LilacKeys: expansão no HubSpot não concluída", details);
 }
 
 function roundDuration(value: number): number {

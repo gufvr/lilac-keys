@@ -52,7 +52,8 @@ document.addEventListener("keydown", (e) => {
   if (!hubspotEditor && !editable) {
     if (isHubSpotPage()) {
       console.warn("LilacKeys: editor do HubSpot não identificado", {
-        host: window.location.hostname,
+        strategy: "none", editorType: "unknown", blocks: 0, durationMs: 0,
+        fallbackReason: "editor-not-found",
       });
     }
     return;
@@ -75,6 +76,10 @@ document.addEventListener("keydown", (e) => {
   void handleKeydown(e, hubspotEditor, editable).catch(
     (error: unknown) => {
       if (isExtensionContextInvalidated(error)) return;
+      if (isHubSpotPage()) {
+        reportHubSpotFailure("shortcut-processing-failed");
+        return;
+      }
       console.error("LilacKeys: erro ao processar atalho", error);
     },
   );
@@ -110,9 +115,7 @@ async function handleKeydown(
     const snapshot = await macroCache.getSnapshot();
     if (!snapshot) {
       if (hubspotEditor || isHubSpotPage()) {
-        console.warn("LilacKeys: cache de macros indisponível no HubSpot", {
-          host: window.location.hostname || "related-frame",
-        });
+        reportHubSpotFailure("cache-unavailable");
       }
       insertSpace(
         plainTextElement,
@@ -143,7 +146,8 @@ async function handleKeydown(
       valueBeforeCursor,
     );
   } catch (error) {
-    console.error("LilacKeys: falha ao carregar macros", error);
+    if (isHubSpotPage()) reportHubSpotFailure("macro-processing-failed");
+    else console.error("LilacKeys: falha ao carregar macros", error);
   } finally {
     isExpandingMacro = false;
   }
@@ -157,6 +161,13 @@ function isSupportedEditable(
     element instanceof HTMLTextAreaElement ||
     (element instanceof HTMLElement && element.isContentEditable)
   );
+}
+
+function reportHubSpotFailure(reason: string): void {
+  console.warn("LilacKeys: expansão no HubSpot não concluída", {
+    strategy: "none", editorType: "unknown", blocks: 0, durationMs: 0,
+    fallbackReason: reason,
+  });
 }
 
 function findSupportedEditable(
