@@ -12,6 +12,11 @@ interface MacroCardProps {
   onSelect?: (id: string) => void;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
+  dragging?: boolean;
+  dropPlacement?: "above" | "below";
+  onDragOver?: (id: string, placement: "above" | "below") => void;
+  onDragLeave?: (id: string) => void;
+  onDrop?: (id: string, placement: "above" | "below") => void;
 }
 
 export function MacroCard({
@@ -24,6 +29,11 @@ export function MacroCard({
   onSelect,
   onDragStart,
   onDragEnd,
+  dragging = false,
+  dropPlacement,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: MacroCardProps) {
   const [expanded, setExpanded] = useState(false);
   const handleDelete = () => {
@@ -36,10 +46,44 @@ export function MacroCard({
 
   return (
     <div
-      className={`macro-card card${expanded ? " is-expanded" : ""}`}
+      className={`macro-card card${expanded ? " is-expanded" : ""}${
+        dragging ? " macro-card-dragging" : ""
+      }${dropPlacement ? ` macro-card-drop-${dropPlacement}` : ""}`}
       draggable={Boolean(onDragStart)}
-      onDragStart={() => onDragStart?.(macro.id)}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", macro.id);
+        onDragStart?.(macro.id);
+      }}
       onDragEnd={onDragEnd}
+      onDragOver={(event) => {
+        if (!onDragOver) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const bounds = event.currentTarget.getBoundingClientRect();
+        onDragOver(
+          macro.id,
+          event.clientY < bounds.top + bounds.height / 2 ? "above" : "below",
+        );
+      }}
+      onDragLeave={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+        onDragLeave?.(macro.id);
+      }}
+      onDrop={(event) => {
+        if (!onDrop) return;
+        event.preventDefault();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        onDrop(
+          macro.id,
+          event.clientY < bounds.top + bounds.height / 2 ? "above" : "below",
+        );
+      }}
       onClick={() => setExpanded((value) => !value)}
     >
       <div className="macro-card-header">

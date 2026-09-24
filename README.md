@@ -41,7 +41,7 @@ After expanding the snippet, the first placeholder is selected automatically. Pr
 
 Use folders and subfolders to organize snippets by topic, project, or workflow.
 
-You can create, rename, and organize folders, move snippets between them, and export complete folder structures.
+You can create, rename, and organize folders, move snippets between them, reorder folders or snippets by dragging them, and export complete folder structures.
 
 ## Import and export
 

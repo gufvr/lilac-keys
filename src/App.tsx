@@ -22,7 +22,7 @@ function App() {
     folders,
     createFolder,
     deleteSelected,
-    moveSelected,
+    moveMacros,
     renameFolder,
     moveFolder,
     moveFolders,
@@ -124,7 +124,7 @@ function App() {
             onExport={handleExportMacros}
             onCreateFolder={handleCreateFolder}
             onDeleteSelected={deleteSelected}
-            onMoveSelected={moveSelected}
+            onMoveMacros={moveMacros}
             onRenameFolder={renameFolder}
             onMoveFolder={moveFolder}
             onMoveFolders={moveFolders}

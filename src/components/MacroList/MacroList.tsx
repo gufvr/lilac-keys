@@ -9,6 +9,11 @@ import {
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
+import {
+  canReorderVisibleItems,
+  ItemPlacement,
+  sortItemsByOrder,
+} from "../../utils/itemOrdering";
 import "./MacroList.css";
 
 interface MacroListProps {
@@ -26,7 +31,12 @@ interface MacroListProps {
   onExport: (ids: string[], format: "json" | "txt") => void;
   onCreateFolder: (parentId?: string) => void;
   onDeleteSelected: (ids: string[]) => void;
-  onMoveSelected: (ids: string[], folderId?: string) => void;
+  onMoveMacros: (
+    ids: string[],
+    folderId?: string,
+    placement?: ItemPlacement,
+    relativeToId?: string,
+  ) => { success: boolean; error?: string };
   onRenameFolder: (
     id: string,
     name: string,
@@ -40,6 +50,8 @@ interface MacroListProps {
   onMoveFolders: (
     ids: string[],
     parentId?: string,
+    placement?: ItemPlacement,
+    relativeToId?: string,
   ) => { success: boolean; error?: string };
   onDeleteFolder: (id: string) => void;
   onDeleteFolders: (ids: string[]) => void;
@@ -47,6 +59,7 @@ interface MacroListProps {
 }
 
 type FolderDropPlacement = "inside" | "above" | "below";
+type MacroDropPlacement = "above" | "below";
 
 interface FolderDragState {
   folder: Folder;
@@ -60,6 +73,11 @@ interface FolderDragState {
 interface FolderDropTarget {
   folderId: string;
   placement: FolderDropPlacement;
+}
+
+interface MacroDropTarget {
+  macroId: string;
+  placement: MacroDropPlacement;
 }
 
 export function MacroList({
@@ -77,7 +95,7 @@ export function MacroList({
   onExport,
   onCreateFolder,
   onDeleteSelected,
-  onMoveSelected,
+  onMoveMacros,
   onRenameFolder,
   onMoveFolder,
   onMoveFolders,
@@ -101,6 +119,8 @@ export function MacroList({
   const [folderDropTarget, setFolderDropTarget] =
     useState<FolderDropTarget>();
   const [macroDragIds, setMacroDragIds] = useState<string[]>([]);
+  const [macroDropTarget, setMacroDropTarget] =
+    useState<MacroDropTarget>();
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const suppressFolderClickRef = useRef(false);
@@ -228,6 +248,10 @@ export function MacroList({
               folderDropTarget.placement === "inside"
                 ? targetFolder.id
                 : targetFolder.parentId,
+              folderDropTarget.placement,
+              folderDropTarget.placement === "inside"
+                ? undefined
+                : targetFolder.id,
             );
             if (result.success) setSelectedFolders([]);
             else if (result.error) window.alert(result.error);
@@ -299,12 +323,11 @@ export function MacroList({
     }
     return path;
   }, [currentFolder, folders]);
-  const filteredMacros = useMemo(
-    () =>
-      macros.filter((macro) => {
+  const filteredMacros = useMemo(() => {
+    const hasSearch = query.trim().length > 0;
+    const matches = macros.filter((macro) => {
         const haystack =
           `${macro.nome} ${macro.atalho} ${macro.textoExpandido}`.toLowerCase();
-        const hasSearch = query.trim().length > 0;
         const matchesLocation =
           folderFilter !== "all"
             ? (macro.folderId ?? "") === folderFilter
@@ -315,9 +338,9 @@ export function MacroList({
           (hasSearch || matchesLocation) &&
           haystack.includes(query.toLowerCase())
         );
-      }),
-    [macros, query, folderFilter, currentFolderId],
-  );
+      });
+    return hasSearch ? matches : sortItemsByOrder(matches);
+  }, [macros, query, folderFilter, currentFolderId]);
   const toggle = (id: string) =>
     setSelected((ids) =>
       ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
@@ -379,9 +402,12 @@ export function MacroList({
     }
   };
   const moveSelectedMacros = (folderId?: string) => {
-    onMoveSelected(selected, folderId);
-    setSelected([]);
-    setIsMacroMoveModalOpen(false);
+    const result = onMoveMacros(selected, folderId);
+    if (!result.success) window.alert(result.error);
+    else {
+      setSelected([]);
+      setIsMacroMoveModalOpen(false);
+    }
   };
   const toggleMoveFolder = (folderId: string) => {
     setExpandedMoveFolders((ids) => {
@@ -711,7 +737,7 @@ export function MacroList({
               <div
                 key={folder.id}
                 className={`macro-folder-row${
-                  folderDrag?.folder.id === folder.id && folderDrag.dragging
+                  folderDrag?.folderIds.includes(folder.id) && folderDrag.dragging
                     ? " macro-folder-row-dragging"
                     : ""
                 }${
@@ -761,6 +787,7 @@ export function MacroList({
                 onDragOver={(event) => {
                   if (!macroDragIds.length) return;
                   event.preventDefault();
+                  setMacroDropTarget(undefined);
                   setFolderDropTarget({
                     folderId: folder.id,
                     placement: "inside",
@@ -772,10 +799,13 @@ export function MacroList({
                 onDrop={(event) => {
                   if (!macroDragIds.length) return;
                   event.preventDefault();
-                  onMoveSelected(macroDragIds, folder.id);
-                  setSelected((ids) =>
-                    ids.filter((id) => !macroDragIds.includes(id)),
-                  );
+                  const result = onMoveMacros(macroDragIds, folder.id);
+                  if (!result.success && result.error) window.alert(result.error);
+                  if (result.success) {
+                    setSelected((ids) =>
+                      ids.filter((id) => !macroDragIds.includes(id)),
+                    );
+                  }
                   setMacroDragIds([]);
                   setFolderDropTarget(undefined);
                 }}
@@ -824,12 +854,57 @@ export function MacroList({
             onExport={onExport}
             selected={selected.includes(macro.id)}
             onSelect={toggle}
-            onDragStart={(id) =>
-              setMacroDragIds(selected.includes(id) ? selected : [id])
+            dragging={macroDragIds.includes(macro.id)}
+            dropPlacement={
+              macroDropTarget?.macroId === macro.id
+                ? macroDropTarget.placement
+                : undefined
+            }
+            onDragStart={(id) => {
+              setFolderDropTarget(undefined);
+              setMacroDropTarget(undefined);
+              setMacroDragIds(selected.includes(id) ? selected : [id]);
+            }}
+            onDragOver={
+              !canReorderVisibleItems(query)
+                ? undefined
+                : (id, placement) => {
+                    if (macroDragIds.includes(id)) {
+                      setMacroDropTarget(undefined);
+                      return;
+                    }
+                    setFolderDropTarget(undefined);
+                    setMacroDropTarget({ macroId: id, placement });
+                  }
+            }
+            onDragLeave={(id) => {
+              setMacroDropTarget((target) =>
+                target?.macroId === id ? undefined : target,
+              );
+            }}
+            onDrop={
+              !canReorderVisibleItems(query)
+                ? undefined
+                : (id, placement) => {
+                    if (macroDragIds.includes(id)) return;
+                    const target = macros.find((item) => item.id === id);
+                    if (!target) return;
+                    const result = onMoveMacros(
+                      macroDragIds,
+                      target.folderId,
+                      placement,
+                      target.id,
+                    );
+                    if (!result.success && result.error)
+                      window.alert(result.error);
+                    setMacroDropTarget(undefined);
+                    setMacroDragIds([]);
+                  }
             }
             onDragEnd={() => {
               setMacroDragIds([]);
               setFolderDropTarget(undefined);
+              setMacroDropTarget(undefined);
             }}
           />
         ))}

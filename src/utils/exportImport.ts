@@ -1,4 +1,5 @@
 import { Folder, Macro } from "../types/macro";
+import { sortItemsByOrder } from "./itemOrdering";
 
 type ExternalSnippet = {
   name: string;
@@ -271,8 +272,9 @@ function buildTreeText(
   });
 
   const appendMacros = (folderId: string | undefined, indent: string) => {
-    macros
-      .filter((macro) => macro.folderId === folderId)
+    sortItemsByOrder(
+      macros.filter((macro) => macro.folderId === folderId),
+    )
       .forEach((macro) => {
         lines.push(`${indent}{${macro.atalho}}`);
         lines.push(`${indent}<macro-name>${macro.nome}</macro-name>`);

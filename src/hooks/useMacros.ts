@@ -4,6 +4,12 @@ import { StorageService } from "../services/storageService";
 import { validateMacro, isShortcutUnique } from "../utils/macroValidation";
 import { Folder as ImportedFolder } from "../types/macro";
 import { stripUnsupportedMacroImages } from "../utils/macroImages";
+import {
+  ItemPlacement,
+  nextOrderInScope,
+  reorderScopedItems,
+  sortItemsByOrder,
+} from "../utils/itemOrdering";
 
 export function useMacros() {
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -57,6 +63,11 @@ export function useMacros() {
       const newMacro: Macro = {
         ...sanitizedMacroData,
         id: crypto.randomUUID(),
+        order: nextOrderInScope(
+          macros,
+          sanitizedMacroData.folderId,
+          (macro) => macro.folderId,
+        ),
       };
 
       setMacros((prev) => [...prev, newMacro]);
@@ -201,7 +212,29 @@ export function useMacros() {
           return { ...macro, nome: name };
         });
 
-        return [...currentMacros, ...renamedMacros];
+        const importedOrderById = new Map<string, number>();
+        const importedScopes = new Set(
+          renamedMacros.map((macro) => macro.folderId),
+        );
+        for (const scope of importedScopes) {
+          sortItemsByOrder(
+            renamedMacros.filter((macro) => macro.folderId === scope),
+          ).forEach((macro, index) => importedOrderById.set(macro.id, index));
+        }
+        const firstOrders = new Map<string | undefined, number>();
+        const appendedMacros = renamedMacros.map((macro) => {
+          const scope = macro.folderId;
+          const firstOrder =
+            firstOrders.get(scope) ??
+            nextOrderInScope(currentMacros, scope, (item) => item.folderId);
+          firstOrders.set(scope, firstOrder);
+          return {
+            ...macro,
+            order: firstOrder + (importedOrderById.get(macro.id) ?? 0),
+          };
+        });
+
+        return [...currentMacros, ...appendedMacros];
       });
     },
     [folders],
@@ -371,19 +404,32 @@ export function useMacros() {
     (
       ids: string[],
       parentId?: string,
+      placement: ItemPlacement = "inside",
+      relativeToId?: string,
     ): { success: boolean; error?: string } => {
       const selectedIds = new Set(ids);
       const selectedFolders = folders.filter((folder) => selectedIds.has(folder.id));
       if (!selectedFolders.length) {
         return { success: false, error: "Nenhuma pasta selecionada" };
       }
-      if (parentId && selectedIds.has(parentId)) {
+      const relativeTo = relativeToId
+        ? folders.find((folder) => folder.id === relativeToId)
+        : undefined;
+      if (placement !== "inside" && !relativeTo) {
+        return { success: false, error: "Pasta de referência não encontrada" };
+      }
+      if (relativeTo && selectedIds.has(relativeTo.id)) {
+        return { success: false, error: "Destino faz parte da seleção" };
+      }
+      const destinationParent =
+        placement === "inside" ? parentId : relativeTo?.parentId;
+      if (destinationParent && selectedIds.has(destinationParent)) {
         return {
           success: false,
           error: "Uma pasta não pode ser movida para dentro dela mesma",
         };
       }
-      let ancestor = folders.find((folder) => folder.id === parentId);
+      let ancestor = folders.find((folder) => folder.id === destinationParent);
       while (ancestor) {
         if (selectedIds.has(ancestor.id)) {
           return {
@@ -397,7 +443,8 @@ export function useMacros() {
         folders
           .filter(
             (folder) =>
-              folder.parentId === parentId && !selectedIds.has(folder.id),
+              folder.parentId === destinationParent &&
+              !selectedIds.has(folder.id),
           )
           .map((folder) => folder.name.toLowerCase()),
       );
@@ -412,23 +459,14 @@ export function useMacros() {
         };
       }
       setFolders((prev) => {
-        const siblings = prev.filter(
-          (folder) =>
-            folder.parentId === parentId && !selectedIds.has(folder.id),
-        );
-        const moved = selectedFolders.map((folder) => ({ ...folder, parentId }));
-        const orderById = new Map(
-          [...siblings, ...moved].map((folder, index) => [folder.id, index]),
-        );
-        return prev.map((folder) =>
-          orderById.has(folder.id)
-            ? {
-                ...folder,
-                parentId: selectedIds.has(folder.id) ? parentId : folder.parentId,
-                order: orderById.get(folder.id),
-              }
-            : folder,
-        );
+        return reorderScopedItems(prev, ids, {
+          destinationScope: destinationParent,
+          placement,
+          relativeToId,
+          getScope: (folder) => folder.parentId,
+          setScope: (folder, scope) => ({ ...folder, parentId: scope }),
+          getFallbackOrder: (folder) => folder.createdAt,
+        }).items;
       });
       return { success: true };
     },
@@ -471,13 +509,40 @@ export function useMacros() {
     [deleteFolders],
   );
 
-  const moveSelected = useCallback((ids: string[], folderId?: string): void => {
-    setMacros((prev) =>
-      prev.map((macro) =>
-        ids.includes(macro.id) ? { ...macro, folderId } : macro,
-      ),
-    );
-  }, []);
+  const moveMacros = useCallback(
+    (
+      ids: string[],
+      folderId?: string,
+      placement: ItemPlacement = "inside",
+      relativeToId?: string,
+    ): { success: boolean; error?: string } => {
+      const selectedIds = new Set(ids);
+      if (!macros.some((macro) => selectedIds.has(macro.id))) {
+        return { success: false, error: "Nenhum snippet selecionado" };
+      }
+      const relativeTo = relativeToId
+        ? macros.find((macro) => macro.id === relativeToId)
+        : undefined;
+      if (placement !== "inside" && !relativeTo) {
+        return { success: false, error: "Snippet de referência não encontrado" };
+      }
+      if (relativeTo && selectedIds.has(relativeTo.id)) {
+        return { success: false, error: "Destino faz parte da seleção" };
+      }
+
+      setMacros((prev) =>
+        reorderScopedItems(prev, ids, {
+          destinationScope: folderId,
+          placement,
+          relativeToId,
+          getScope: (macro) => macro.folderId,
+          setScope: (macro, scope) => ({ ...macro, folderId: scope }),
+        }).items,
+      );
+      return { success: true };
+    },
+    [macros],
+  );
 
   return {
     macros,
@@ -490,7 +555,7 @@ export function useMacros() {
     folders,
     createFolder,
     deleteSelected,
-    moveSelected,
+    moveMacros,
     renameFolder,
     moveFolder,
     moveFolders,

@@ -14,6 +14,7 @@ const savedMacros: Macro[] = [
     id: "macro-1",
     nome: "Saudação",
     atalho: "oi",
+    order: 3,
     textoExpandido: "Olá! Como posso ajudar? 😊",
   },
 ];

@@ -5,6 +5,7 @@ export interface Macro {
   textoExpandido: string;
   folderId?: string;
   folderName?: string;
+  order?: number;
 }
 
 export interface Folder {
