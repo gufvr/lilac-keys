@@ -10,6 +10,8 @@ import {
   reorderScopedItems,
   sortItemsByOrder,
 } from "../utils/itemOrdering";
+import { cloneFolderTree } from "../utils/folderClone";
+import { createUniqueValue } from "../utils/uniqueValue";
 
 export function useMacros() {
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -197,6 +199,9 @@ export function useMacros() {
         const usedNames = new Set(
           currentMacros.map((macro) => macro.nome.toLowerCase()),
         );
+        const usedShortcuts = new Set(
+          currentMacros.map((macro) => macro.atalho.toLowerCase()),
+        );
 
         const renamedMacros = importedMacros.map((macro) => {
           const originalName = macro.nome;
@@ -209,7 +214,15 @@ export function useMacros() {
           }
 
           usedNames.add(name.toLowerCase());
-          return { ...macro, nome: name };
+          return {
+            ...macro,
+            nome: name,
+            atalho: createUniqueValue(
+              macro.atalho,
+              usedShortcuts,
+              "-importado",
+            ),
+          };
         });
 
         const importedOrderById = new Map<string, number>();
@@ -509,6 +522,28 @@ export function useMacros() {
     [deleteFolders],
   );
 
+  const cloneFolder = useCallback(
+    (
+      id: string,
+    ): { success: boolean; error?: string; adjustedShortcuts: number } => {
+      const result = cloneFolderTree(folders, macros, id);
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error,
+          adjustedShortcuts: 0,
+        };
+      }
+      setFolders(result.folders);
+      setMacros(result.macros);
+      return {
+        success: true,
+        adjustedShortcuts: result.adjustedShortcuts,
+      };
+    },
+    [folders, macros],
+  );
+
   const moveMacros = useCallback(
     (
       ids: string[],
@@ -561,5 +596,6 @@ export function useMacros() {
     moveFolders,
     deleteFolder,
     deleteFolders,
+    cloneFolder,
   };
 }

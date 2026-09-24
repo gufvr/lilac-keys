@@ -1,7 +1,10 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Folder, Macro } from "../../types/macro";
 import {
   exportMacros,
+  filterImportedData,
+  getFolderPath,
+  getImportMacroConflicts,
   importMacros,
   ImportedData,
 } from "../../utils/exportImport";
@@ -19,6 +22,17 @@ export function ImportExport({
   folders = [],
 }: ImportExportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<ImportedData>();
+  const [selectedMacroIds, setSelectedMacroIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const conflicts = useMemo(
+    () =>
+      preview
+        ? getImportMacroConflicts(preview.macros, macros)
+        : new Map(),
+    [macros, preview],
+  );
 
   const handleExportJSON = () => {
     if (macros.length === 0) {
@@ -33,42 +47,66 @@ export function ImportExport({
       alert("Não há macros para exportar");
       return;
     }
-    exportMacros(macros, "txt");
+    exportMacros(macros, "txt", folders);
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+  const closePreview = () => {
+    setPreview(undefined);
+    setSelectedMacroIds(new Set());
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     try {
       const importedData = await importMacros(file);
-      const importedMacros = importedData.macros;
-
-      if (importedMacros.length === 0) {
+      if (importedData.macros.length === 0) {
         alert("O arquivo não contém macros válidas");
         return;
       }
-
-      const confirmMessage =
-        macros.length > 0
-          ? `Importar ${importedMacros.length} macro(s)? As ${macros.length} macro(s) existente(s) serão preservadas.`
-          : `Importar ${importedMacros.length} macro(s)?`;
-
-      if (window.confirm(confirmMessage)) {
-        onImport(importedData);
-        alert(`${importedMacros.length} macro(s) importada(s) com sucesso!`);
-      }
+      const importConflicts = getImportMacroConflicts(importedData.macros, macros);
+      setPreview(importedData);
+      setSelectedMacroIds(
+        new Set(
+          importedData.macros
+            .filter((macro) => !importConflicts.get(macro.id)?.shortcut)
+            .map((macro) => macro.id),
+        ),
+      );
     } catch (error) {
       alert(error instanceof Error ? error.message : "Erro ao importar macros");
     } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const toggleMacro = (id: string) => {
+    setSelectedMacroIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const confirmImport = () => {
+    if (!preview || selectedMacroIds.size === 0) return;
+    const selectedData = filterImportedData(preview, selectedMacroIds);
+    const shortcutConflicts = selectedData.macros.filter(
+      (macro) => conflicts.get(macro.id)?.shortcut,
+    ).length;
+    if (
+      shortcutConflicts > 0 &&
+      !window.confirm(
+        `${shortcutConflicts} atalho(s) em conflito receberão um sufixo único. Continuar?`,
+      )
+    ) {
+      return;
+    }
+    onImport(selectedData);
+    alert(`${selectedData.macros.length} macro(s) importada(s) com sucesso!`);
+    closePreview();
   };
 
   return (
@@ -101,7 +139,10 @@ export function ImportExport({
         </div>
         <div className="import-export-group">
           <span className="import-export-label">Importar:</span>
-          <button className="btn btn-secondary" onClick={handleImportClick}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <span className="material-symbols-outlined">upload</span>
             Arquivo (JSON/TXT)
           </button>
@@ -114,6 +155,104 @@ export function ImportExport({
           />
         </div>
       </div>
+
+      {preview && (
+        <div className="import-preview-backdrop" role="presentation">
+          <section
+            className="import-preview"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-preview-title"
+          >
+            <header className="import-preview-header">
+              <div>
+                <h3 id="import-preview-title">Selecionar macros para importar</h3>
+                <p>O conteúdo completo não é exibido nesta prévia.</p>
+              </div>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={closePreview}
+                aria-label="Fechar prévia de importação"
+                title="Cancelar"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </header>
+            <div className="import-preview-selection-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  setSelectedMacroIds(
+                    new Set(preview.macros.map((macro) => macro.id)),
+                  )
+                }
+              >
+                Selecionar todas
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSelectedMacroIds(new Set())}
+              >
+                Limpar seleção
+              </button>
+            </div>
+            <div className="import-preview-list">
+              {preview.macros.map((macro) => {
+                const conflict = conflicts.get(macro.id);
+                const folderPath = macro.folderId
+                  ? getFolderPath(macro.folderId, preview.folders)
+                  : macro.folderName || "Sem pasta";
+                return (
+                  <label className="import-preview-item" key={macro.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedMacroIds.has(macro.id)}
+                      onChange={() => toggleMacro(macro.id)}
+                    />
+                    <span className="import-preview-item-content">
+                      <strong>{macro.nome}</strong>
+                      <span>
+                        Atalho: <code>{macro.atalho}</code>
+                      </span>
+                      <span>Pasta: {folderPath}</span>
+                      {(conflict?.name || conflict?.shortcut) && (
+                        <span className="import-preview-conflict">
+                          {conflict.name && "Nome será ajustado. "}
+                          {conflict.shortcut &&
+                            "Atalho receberá sufixo se esta macro for selecionada."}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <footer className="import-preview-footer">
+              <span>{selectedMacroIds.size} selecionada(s)</span>
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={closePreview}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={confirmImport}
+                  disabled={selectedMacroIds.size === 0}
+                >
+                  Importar selecionadas
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

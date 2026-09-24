@@ -261,6 +261,23 @@
   margin-left: auto;
   color: var(--color-text-tertiary);
   font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.macro-folder-row-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.macro-folder-row-actions .btn-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.macro-folder-row-actions .material-symbols-outlined {
+  font-size: 1.15rem;
 }
 
 .macro-folder-menu-trigger {
@@ -527,6 +544,24 @@
 }
 
 @media (max-width: 768px) {
+  .macro-folder-row {
+    flex-wrap: wrap;
+  }
+
+  .macro-folder-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .macro-folder-count {
+    margin-left: auto;
+  }
+
+  .macro-folder-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .macro-list-header,
   .macro-list-heading {
     align-items: stretch;

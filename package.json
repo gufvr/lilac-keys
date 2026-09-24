@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node --experimental-strip-types --test tests/macroStorage.test.ts tests/macroCache.test.ts tests/hubspotEditor.test.ts tests/hubspotProseMirror.test.ts tests/contentRegression.test.ts tests/itemOrdering.test.ts",
+    "test": "node --experimental-strip-types --test tests/macroStorage.test.ts tests/macroCache.test.ts tests/hubspotEditor.test.ts tests/hubspotProseMirror.test.ts tests/contentRegression.test.ts tests/itemOrdering.test.ts tests/exportImport.test.ts tests/folderClone.test.ts tests/folderActions.test.ts",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },

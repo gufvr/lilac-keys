@@ -1,5 +1,5 @@
-import { Folder, Macro } from "../types/macro";
-import { sortItemsByOrder } from "./itemOrdering";
+import type { Folder, Macro } from "../types/macro.ts";
+import { sortItemsByOrder } from "./itemOrdering.ts";
 
 type ExternalSnippet = {
   name: string;
@@ -13,11 +13,151 @@ export interface ImportedData {
   folders: Folder[];
 }
 
-interface ExportPayload {
+export interface ExportPayload {
   format: "lilac-keys";
   version: 2;
   folders: Folder[];
   macros: Macro[];
+}
+
+export type ExportScope =
+  | { kind: "all" }
+  | { kind: "folder"; folderId: string }
+  | { kind: "macros"; macroIds: string[] };
+
+export interface ImportMacroConflict {
+  name: boolean;
+  shortcut: boolean;
+}
+
+function collectAncestorFolderIds(
+  folderIds: Iterable<string>,
+  folders: Folder[],
+): Set<string> {
+  const result = new Set(folderIds);
+  const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+
+  for (const folderId of [...result]) {
+    let folder = foldersById.get(folderId);
+    const visited = new Set<string>();
+    while (folder && !visited.has(folder.id)) {
+      visited.add(folder.id);
+      result.add(folder.id);
+      folder = folder.parentId ? foldersById.get(folder.parentId) : undefined;
+    }
+  }
+
+  return result;
+}
+
+function collectDescendantFolderIds(
+  folderId: string,
+  folders: Folder[],
+): Set<string> {
+  const result = new Set<string>();
+  if (!folders.some((folder) => folder.id === folderId)) return result;
+  result.add(folderId);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const folder of folders) {
+      if (
+        folder.parentId &&
+        result.has(folder.parentId) &&
+        !result.has(folder.id)
+      ) {
+        result.add(folder.id);
+        changed = true;
+      }
+    }
+  }
+
+  return result;
+}
+
+export function resolveExportData(
+  macros: Macro[],
+  folders: Folder[],
+  scope: ExportScope,
+): ImportedData {
+  if (scope.kind === "all") {
+    return {
+      macros: macros.map((macro) => ({ ...macro })),
+      folders: folders.map((folder) => ({ ...folder })),
+    };
+  }
+
+  if (scope.kind === "folder") {
+    const selectedFolderIds = collectDescendantFolderIds(
+      scope.folderId,
+      folders,
+    );
+    return {
+      macros: macros
+        .filter(
+          (macro) =>
+            Boolean(macro.folderId) &&
+            selectedFolderIds.has(macro.folderId as string),
+        )
+        .map((macro) => ({ ...macro })),
+      folders: folders
+        .filter((folder) => selectedFolderIds.has(folder.id))
+        .map((folder) => ({ ...folder })),
+    };
+  }
+
+  const selectedMacroIds = new Set(scope.macroIds);
+  const selectedMacros = macros.filter((macro) => selectedMacroIds.has(macro.id));
+  const selectedFolderIds = collectAncestorFolderIds(
+    selectedMacros
+      .map((macro) => macro.folderId)
+      .filter((folderId): folderId is string => Boolean(folderId)),
+    folders,
+  );
+
+  return {
+    macros: selectedMacros.map((macro) => ({ ...macro })),
+    folders: folders
+      .filter((folder) => selectedFolderIds.has(folder.id))
+      .map((folder) => ({ ...folder })),
+  };
+}
+
+export function serializeExportData(
+  data: ImportedData,
+  format: "json" | "txt",
+): string {
+  if (format === "txt") {
+    return buildTreeText(data.macros, data.folders);
+  }
+
+  const exportedFolderIds = new Set(data.folders.map((folder) => folder.id));
+  const payload: ExportPayload = {
+    format: "lilac-keys",
+    version: 2,
+    folders: data.folders.map((folder) => ({
+      ...folder,
+      parentId:
+        folder.parentId && exportedFolderIds.has(folder.parentId)
+          ? folder.parentId
+          : undefined,
+    })),
+    macros: data.macros.map((macro) => ({ ...macro })),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function escapeTreeTextBody(body: string): string {
+  return body
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) =>
+      line.startsWith("\\") || line.trim() === "</macro-content>"
+        ? `\\${line}`
+        : line,
+    )
+    .join("\n");
 }
 
 export function exportMacros(
@@ -28,95 +168,15 @@ export function exportMacros(
   macroIds?: string[],
 ): void {
   try {
-    let dataStr: string;
-    let mimeType: string;
-    let extension: string;
-    const selectedMacroIds = macroIds ? new Set(macroIds) : undefined;
-    const selectedFolderIds = folderId
-      ? new Set(
-          folders
-            .filter((folder) => folder.id === folderId)
-            .map((folder) => folder.id),
-        )
-      : macroIds
-        ? new Set<string>()
-        : undefined;
-
-    if (selectedMacroIds) {
-      const macroFolderIds = new Set(
-        macros
-          .filter((macro) => selectedMacroIds.has(macro.id) && macro.folderId)
-          .map((macro) => macro.folderId as string),
-      );
-      let changed = true;
-      while (changed) {
-        changed = false;
-        folders.forEach((folder) => {
-          if (
-            macroFolderIds.has(folder.id) &&
-            folder.parentId &&
-            !macroFolderIds.has(folder.parentId)
-          ) {
-            macroFolderIds.add(folder.parentId);
-            changed = true;
-          }
-        });
-      }
-      macroFolderIds.forEach((id) => selectedFolderIds?.add(id));
-    }
-
-    if (selectedFolderIds) {
-      let changed = true;
-      while (changed) {
-        changed = false;
-        folders.forEach((folder) => {
-          if (
-            folder.parentId &&
-            selectedFolderIds.has(folder.parentId) &&
-            !selectedFolderIds.has(folder.id)
-          ) {
-            selectedFolderIds.add(folder.id);
-            changed = true;
-          }
-        });
-      }
-    }
-
-    if (format === "txt") {
-      const selectedMacros = selectedMacroIds
-        ? macros.filter((macro) => selectedMacroIds.has(macro.id))
-        : macros;
-      dataStr = buildTreeText(selectedMacros, folders, selectedFolderIds);
-      mimeType = "text/plain";
-      extension = "txt";
-    } else {
-      const exportFolders = selectedFolderIds
-        ? folders.filter((folder) => selectedFolderIds.has(folder.id))
-        : folders;
-      const exportMacros = selectedMacroIds
-        ? macros.filter((macro) => selectedMacroIds.has(macro.id))
-        : selectedFolderIds
-        ? macros.filter(
-            (macro) => macro.folderId && selectedFolderIds.has(macro.folderId),
-          )
-        : macros;
-      const exportedFolderIds = new Set(exportFolders.map((folder) => folder.id));
-      const payload: ExportPayload = {
-        format: "lilac-keys",
-        version: 2,
-        folders: exportFolders.map((folder) => ({
-          ...folder,
-          parentId:
-            folder.parentId && exportedFolderIds.has(folder.parentId)
-              ? folder.parentId
-              : undefined,
-        })),
-        macros: exportMacros.map((macro) => ({ ...macro })),
-      };
-      dataStr = JSON.stringify(payload, null, 2);
-      mimeType = "application/json";
-      extension = "json";
-    }
+    const scope: ExportScope = macroIds
+      ? { kind: "macros", macroIds }
+      : folderId
+        ? { kind: "folder", folderId }
+        : { kind: "all" };
+    const exportData = resolveExportData(macros, folders, scope);
+    const dataStr = serializeExportData(exportData, format);
+    const mimeType = format === "txt" ? "text/plain" : "application/json";
+    const extension = format;
 
     const dataBlob = new Blob([dataStr], { type: mimeType });
     const url = URL.createObjectURL(dataBlob);
@@ -141,92 +201,7 @@ export async function importMacros(file: File): Promise<ImportedData> {
 
     reader.onload = () => {
       try {
-        const content = reader.result as string;
-        const fileName = file.name.toLowerCase();
-
-        if (fileName.endsWith(".txt")) {
-          const externalData = parseExternalText(content);
-
-          if (externalData) {
-            resolve(externalData);
-            return;
-          }
-
-          const commaMacros = parseCommaText(content);
-          if (commaMacros) {
-            resolve({ macros: commaMacros, folders: [] });
-            return;
-          }
-
-          const lines = content
-            .split("\n")
-            .filter((line) => line.trim().length > 0);
-
-          const macros = lines.map((line, index) => {
-            const parts = line.split("\t");
-
-            if (parts.length < 1) {
-              throw new Error(`Linha ${index + 1} está em formato inválido`);
-            }
-
-            return {
-              id: crypto.randomUUID(),
-              nome: parts[0]?.trim(),
-              atalho: parts[1]?.trim(),
-              textoExpandido: parts.slice(2).join("\t").replace(/\\n/g, "\n"),
-            };
-          });
-
-          resolve({ macros, folders: [] });
-          return;
-        }
-
-        const parsed = JSON.parse(content);
-
-        const externalData = parseExternalData(parsed);
-
-        if (externalData) {
-          resolve(externalData);
-          return;
-        }
-
-        if (isExportPayload(parsed)) {
-          resolve({
-            macros: parsed.macros.map((macro) => ({
-              ...macro,
-              id: crypto.randomUUID(),
-            })),
-            folders: parsed.folders.map((folder) => ({
-              ...folder,
-              id: folder.id,
-            })),
-          });
-          return;
-        }
-
-        if (!Array.isArray(parsed)) {
-          reject(new Error("O arquivo JSON não contém um array de macros"));
-          return;
-        }
-
-        const isValid = parsed.every(
-          (macro) =>
-            typeof macro.nome === "string" &&
-            typeof macro.atalho === "string" &&
-            typeof macro.textoExpandido === "string",
-        );
-
-        if (!isValid) {
-          reject(new Error("O arquivo contém macros com estrutura inválida"));
-          return;
-        }
-
-        const macros: Macro[] = parsed.map((macro) => ({
-          ...macro,
-          id: macro.id ?? crypto.randomUUID(),
-        }));
-
-        resolve({ macros, folders: [] });
+        resolve(parseImportedContent(reader.result as string, file.name));
       } catch (error) {
         reject(
           error instanceof Error
@@ -244,6 +219,141 @@ export async function importMacros(file: File): Promise<ImportedData> {
   });
 }
 
+export function parseImportedContent(
+  content: string,
+  fileName: string,
+): ImportedData {
+  if (fileName.toLowerCase().endsWith(".txt")) {
+    const externalData = parseExternalText(content);
+    if (externalData) return externalData;
+
+    const commaMacros = parseCommaText(content);
+    if (commaMacros) return { macros: commaMacros, folders: [] };
+
+    const lines = content
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+    return {
+      macros: lines.map((line, index) => {
+        const parts = line.split("\t");
+        if (parts.length < 1) {
+          throw new Error(`Linha ${index + 1} está em formato inválido`);
+        }
+        return {
+          id: crypto.randomUUID(),
+          nome: parts[0]?.trim(),
+          atalho: parts[1]?.trim(),
+          textoExpandido: parts.slice(2).join("\t").replace(/\\n/g, "\n"),
+        };
+      }),
+      folders: [],
+    };
+  }
+
+  const parsed: unknown = JSON.parse(content);
+  const externalData = parseExternalData(parsed);
+  if (externalData) return externalData;
+
+  if (isExportPayload(parsed)) {
+    return {
+      macros: parsed.macros.map((macro) => ({
+        ...macro,
+        id: crypto.randomUUID(),
+      })),
+      folders: parsed.folders.map((folder) => ({ ...folder })),
+    };
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("O arquivo JSON não contém um array de macros");
+  }
+
+  const isValid = parsed.every(
+    (macro) =>
+      typeof macro === "object" &&
+      macro !== null &&
+      typeof (macro as Partial<Macro>).nome === "string" &&
+      typeof (macro as Partial<Macro>).atalho === "string" &&
+      typeof (macro as Partial<Macro>).textoExpandido === "string",
+  );
+  if (!isValid) {
+    throw new Error("O arquivo contém macros com estrutura inválida");
+  }
+
+  return {
+    macros: (parsed as Macro[]).map((macro) => ({
+      ...macro,
+      id: crypto.randomUUID(),
+    })),
+    folders: [],
+  };
+}
+
+export function filterImportedData(
+  data: ImportedData,
+  macroIds: Iterable<string>,
+): ImportedData {
+  const selectedIds = new Set(macroIds);
+  const selectedMacros = data.macros.filter((macro) =>
+    selectedIds.has(macro.id),
+  );
+  const selectedFolderIds = collectAncestorFolderIds(
+    selectedMacros
+      .map((macro) => macro.folderId)
+      .filter((folderId): folderId is string => Boolean(folderId)),
+    data.folders,
+  );
+  return {
+    macros: selectedMacros.map((macro) => ({ ...macro })),
+    folders: data.folders
+      .filter((folder) => selectedFolderIds.has(folder.id))
+      .map((folder) => ({ ...folder })),
+  };
+}
+
+export function getFolderPath(
+  folderId: string | undefined,
+  folders: Folder[],
+): string {
+  if (!folderId) return "Sem pasta";
+  const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+  const path: string[] = [];
+  const visited = new Set<string>();
+  let folder = foldersById.get(folderId);
+  while (folder && !visited.has(folder.id)) {
+    visited.add(folder.id);
+    path.unshift(folder.name);
+    folder = folder.parentId ? foldersById.get(folder.parentId) : undefined;
+  }
+  return path.length ? path.join(" / ") : "Sem pasta";
+}
+
+export function getImportMacroConflicts(
+  importedMacros: Macro[],
+  existingMacros: Macro[],
+): Map<string, ImportMacroConflict> {
+  const usedNames = new Set(
+    existingMacros.map((macro) => macro.nome.toLowerCase()),
+  );
+  const usedShortcuts = new Set(
+    existingMacros.map((macro) => macro.atalho.toLowerCase()),
+  );
+  const conflicts = new Map<string, ImportMacroConflict>();
+
+  for (const macro of importedMacros) {
+    const normalizedName = macro.nome.toLowerCase();
+    const normalizedShortcut = macro.atalho.toLowerCase();
+    conflicts.set(macro.id, {
+      name: usedNames.has(normalizedName),
+      shortcut: usedShortcuts.has(normalizedShortcut),
+    });
+    usedNames.add(normalizedName);
+    usedShortcuts.add(normalizedShortcut);
+  }
+
+  return conflicts;
+}
+
 function isExportPayload(data: unknown): data is ExportPayload {
   if (typeof data !== "object" || data === null) return false;
   const payload = data as Partial<ExportPayload>;
@@ -258,17 +368,23 @@ function isExportPayload(data: unknown): data is ExportPayload {
 function buildTreeText(
   macros: Macro[],
   folders: Folder[],
-  selectedFolderIds?: Set<string>,
 ): string {
   const lines: string[] = [];
   const childrenByParent = new Map<string | undefined, Folder[]>();
+  const includedFolderIds = new Set(folders.map((folder) => folder.id));
 
   folders.forEach((folder) => {
-    if (!selectedFolderIds || selectedFolderIds.has(folder.id)) {
-      const children = childrenByParent.get(folder.parentId) ?? [];
-      children.push(folder);
-      childrenByParent.set(folder.parentId, children);
-    }
+    const parentId =
+      folder.parentId && includedFolderIds.has(folder.parentId)
+        ? folder.parentId
+        : undefined;
+    const children = childrenByParent.get(parentId) ?? [];
+    children.push(folder);
+    childrenByParent.set(parentId, children);
+  });
+
+  childrenByParent.forEach((children, parentId) => {
+    childrenByParent.set(parentId, sortItemsByOrder(children));
   });
 
   const appendMacros = (folderId: string | undefined, indent: string) => {
@@ -278,7 +394,9 @@ function buildTreeText(
       .forEach((macro) => {
         lines.push(`${indent}{${macro.atalho}}`);
         lines.push(`${indent}<macro-name>${macro.nome}</macro-name>`);
-        lines.push(macro.textoExpandido.replace(/\r/g, ""));
+        lines.push(`${indent}<macro-content>`);
+        lines.push(escapeTreeTextBody(macro.textoExpandido));
+        lines.push(`${indent}</macro-content>`);
       });
   };
 
@@ -301,8 +419,8 @@ function buildTreeText(
 function parseExternalText(content: string): ImportedData | null {
   const trimmedContent = content.trim();
 
-  const treeMacros = parseTreeText(trimmedContent);
-  if (treeMacros) return { macros: treeMacros, folders: [] };
+  const treeData = parseTreeText(trimmedContent);
+  if (treeData) return treeData;
 
   try {
     const parsed = JSON.parse(trimmedContent);
@@ -318,10 +436,13 @@ function parseExternalText(content: string): ImportedData | null {
   }
 }
 
-function parseTreeText(content: string): Macro[] | null {
+function parseTreeText(content: string): ImportedData | null {
   const lines = content.split(/\r?\n/);
   const macros: Macro[] = [];
-  const folderStack: { indent: number; name: string }[] = [];
+  const folders: Folder[] = [];
+  const folderStack: { indent: number; folder: Folder }[] = [];
+  const nextFolderOrder = new Map<string | undefined, number>();
+  const nextMacroOrder = new Map<string | undefined, number>();
   let index = 0;
 
   while (index < lines.length) {
@@ -342,7 +463,17 @@ function parseTreeText(content: string): Macro[] | null {
       ) {
         folderStack.pop();
       }
-      folderStack.push({ indent, name: folderMatch[1].trim() });
+      const parentId = folderStack[folderStack.length - 1]?.folder.id;
+      const folder: Folder = {
+        id: crypto.randomUUID(),
+        name: folderMatch[1].trim(),
+        createdAt: Date.now() + folders.length,
+        parentId,
+        order: nextFolderOrder.get(parentId) ?? 0,
+      };
+      nextFolderOrder.set(parentId, (nextFolderOrder.get(parentId) ?? 0) + 1);
+      folders.push(folder);
+      folderStack.push({ indent, folder });
       index += 1;
       continue;
     }
@@ -355,26 +486,47 @@ function parseTreeText(content: string): Macro[] | null {
 
     const nameLine = lines[index + 1]?.trim();
     const nameMatch = nameLine?.match(/^<macro-name>(.*)<\/macro-name>$/);
-    if (nameMatch) index += 1;
-
+    index += nameMatch ? 2 : 1;
     const bodyLines: string[] = [];
-    index += 1;
-    while (index < lines.length) {
-      const nextTrimmed = lines[index].trim();
-      if (/^\[[^\]]+\]$/.test(nextTrimmed) || /^\{[^{}]+\}$/.test(nextTrimmed)) {
-        break;
-      }
-      bodyLines.push(lines[index].trim());
+    const hasContentBoundary = lines[index]?.trim() === "<macro-content>";
+    if (hasContentBoundary) {
       index += 1;
+      while (
+        index < lines.length &&
+        lines[index].trim() !== "</macro-content>"
+      ) {
+        const line = lines[index];
+        bodyLines.push(line.startsWith("\\") ? line.slice(1) : line);
+        index += 1;
+      }
+      if (lines[index]?.trim() === "</macro-content>") index += 1;
+    } else {
+      while (index < lines.length) {
+        const nextTrimmed = lines[index].trim();
+        if (
+          /^\[[^\]]+\]$/.test(nextTrimmed) ||
+          /^\{[^{}]+\}$/.test(nextTrimmed)
+        ) {
+          break;
+        }
+        bodyLines.push(lines[index].trim());
+        index += 1;
+      }
     }
 
+    const folder = folderStack[folderStack.length - 1]?.folder;
+    const macroOrder = nextMacroOrder.get(folder?.id) ?? 0;
+    nextMacroOrder.set(folder?.id, macroOrder + 1);
     macros.push({
       id: crypto.randomUUID(),
       nome: shortcutMatch[1].trim(),
       atalho: shortcutMatch[1].trim(),
-      textoExpandido: bodyLines.join("\n").trim(),
-      ...(folderStack.length > 0
-        ? { folderName: folderStack[folderStack.length - 1].name }
+      textoExpandido: hasContentBoundary
+        ? bodyLines.join("\n")
+        : bodyLines.join("\n").trim(),
+      order: macroOrder,
+      ...(folder
+        ? { folderId: folder.id, folderName: folder.name }
         : {}),
     });
 
@@ -383,7 +535,7 @@ function parseTreeText(content: string): Macro[] | null {
     }
   }
 
-  return macros.length > 0 ? macros : null;
+  return macros.length > 0 ? { macros, folders } : null;
 }
 
 function parseCommaText(content: string): Macro[] | null {

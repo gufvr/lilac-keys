@@ -14,6 +14,10 @@ import {
   ItemPlacement,
   sortItemsByOrder,
 } from "../../utils/itemOrdering";
+import {
+  isolateFolderAction,
+  runFolderAction,
+} from "../../utils/folderActions";
 import "./MacroList.css";
 
 interface MacroListProps {
@@ -55,6 +59,9 @@ interface MacroListProps {
   ) => { success: boolean; error?: string };
   onDeleteFolder: (id: string) => void;
   onDeleteFolders: (ids: string[]) => void;
+  onCloneFolder: (
+    id: string,
+  ) => { success: boolean; error?: string; adjustedShortcuts: number };
   onExportFolder: (id: string, format: "json" | "txt") => void;
 }
 
@@ -101,6 +108,7 @@ export function MacroList({
   onMoveFolders,
   onDeleteFolder,
   onDeleteFolders,
+  onCloneFolder,
   onExportFolder,
 }: MacroListProps) {
   const [folderFilter, setFolderFilter] = useState("all");
@@ -407,6 +415,18 @@ export function MacroList({
     else {
       setSelected([]);
       setIsMacroMoveModalOpen(false);
+    }
+  };
+  const cloneFolder = (folder: Folder) => {
+    const result = onCloneFolder(folder.id);
+    if (!result.success) {
+      window.alert(result.error);
+      return;
+    }
+    if (result.adjustedShortcuts > 0) {
+      window.alert(
+        `${result.adjustedShortcuts} atalho(s) foram ajustados para manter valores únicos.`,
+      );
     }
   };
   const toggleMoveFolder = (folderId: string) => {
@@ -838,6 +858,65 @@ export function MacroList({
                   }{" "}
                   snippet(s)
                 </span>
+                <div
+                  className="macro-folder-row-actions"
+                  onClick={isolateFolderAction}
+                  onPointerDown={isolateFolderAction}
+                  onKeyDown={isolateFolderAction}
+                >
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    title="Renomear pasta"
+                    aria-label={`Renomear pasta ${folder.name}`}
+                    onClick={(event) =>
+                      runFolderAction(event, () => renameFolder(folder))
+                    }
+                  >
+                    <span className="material-symbols-outlined">edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    title="Clonar pasta"
+                    aria-label={`Clonar pasta ${folder.name}`}
+                    onClick={(event) =>
+                      runFolderAction(event, () => cloneFolder(folder))
+                    }
+                  >
+                    <span className="material-symbols-outlined">
+                      content_copy
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    title="Exportar pasta em JSON"
+                    aria-label={`Exportar pasta ${folder.name} em JSON`}
+                    onClick={(event) =>
+                      runFolderAction(event, () =>
+                        onExportFolder(folder.id, "json"),
+                      )
+                    }
+                  >
+                    <span className="material-symbols-outlined">download</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    title="Exportar pasta em TXT"
+                    aria-label={`Exportar pasta ${folder.name} em TXT`}
+                    onClick={(event) =>
+                      runFolderAction(event, () =>
+                        onExportFolder(folder.id, "txt"),
+                      )
+                    }
+                  >
+                    <span className="material-symbols-outlined">
+                      description
+                    </span>
+                  </button>
+                </div>
               </div>
             ))}
             </div>

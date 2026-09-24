@@ -28,6 +28,7 @@ function App() {
     moveFolders,
     deleteFolder,
     deleteFolders,
+    cloneFolder,
   } = useMacros();
   const [editingMacro, setEditingMacro] = useState<Macro | undefined>();
   const [query, setQuery] = useState("");
@@ -130,6 +131,7 @@ function App() {
             onMoveFolders={moveFolders}
             onDeleteFolder={deleteFolder}
             onDeleteFolders={deleteFolders}
+            onCloneFolder={cloneFolder}
             onExportFolder={handleExportFolder}
           />
           <ImportExport
