@@ -21,6 +21,7 @@ interface MacroListProps {
   onGoHome: () => void;
   onCreateMacro: (folderId?: string) => void;
   onEdit: (macro: Macro) => void;
+  onClone: (macro: Macro) => void;
   onDelete: (id: string) => void;
   onExport: (ids: string[], format: "json" | "txt") => void;
   onCreateFolder: (parentId?: string) => void;
@@ -71,6 +72,7 @@ export function MacroList({
   onGoHome,
   onCreateMacro,
   onEdit,
+  onClone,
   onDelete,
   onExport,
   onCreateFolder,
@@ -817,6 +819,7 @@ export function MacroList({
             key={macro.id}
             macro={macro}
             onEdit={onEdit}
+            onClone={onClone}
             onDelete={onDelete}
             onExport={onExport}
             selected={selected.includes(macro.id)}

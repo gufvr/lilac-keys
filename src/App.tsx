@@ -54,6 +54,10 @@ function App() {
     setEditingMacro(macro);
   };
 
+  const handleClone = (macro: Macro) => {
+    setEditingMacro({ ...macro, id: "" });
+  };
+
   const handleCreateMacro = (folderId?: string) => {
     setEditingMacro({
       id: "",
@@ -115,6 +119,7 @@ function App() {
             onGoHome={handleGoHome}
             onCreateMacro={handleCreateMacro}
             onEdit={handleEdit}
+            onClone={handleClone}
             onDelete={handleDelete}
             onExport={handleExportMacros}
             onCreateFolder={handleCreateFolder}

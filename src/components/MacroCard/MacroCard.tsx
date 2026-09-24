@@ -5,6 +5,7 @@ import "./MacroCard.css";
 interface MacroCardProps {
   macro: Macro;
   onEdit: (macro: Macro) => void;
+  onClone: (macro: Macro) => void;
   onDelete: (id: string) => void;
   onExport?: (ids: string[], format: "json" | "txt") => void;
   selected?: boolean;
@@ -16,6 +17,7 @@ interface MacroCardProps {
 export function MacroCard({
   macro,
   onEdit,
+  onClone,
   onDelete,
   onExport,
   selected = false,
@@ -61,6 +63,14 @@ export function MacroCard({
           className="macro-card-actions"
           onClick={(event) => event.stopPropagation()}
         >
+          <button
+            className="btn-icon"
+            onClick={() => onClone(macro)}
+            aria-label={`Clonar macro ${macro.nome}`}
+            title="Clonar"
+          >
+            <span className="material-symbols-outlined">content_copy</span>
+          </button>
           <button
             className="btn-icon"
             onClick={() => onEdit(macro)}
