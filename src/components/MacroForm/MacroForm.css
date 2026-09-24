@@ -130,13 +130,77 @@
   margin-top: 1.5rem;
 }
 
+.macro-form-exit-confirmation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.macro-form-exit-confirmation {
+  width: min(30rem, 100%);
+  padding: 1.5rem;
+  border: 1px solid var(--color-border-hover);
+  box-shadow: var(--shadow-xl);
+}
+
+.macro-form-exit-confirmation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.85rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.macro-form-exit-confirmation h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+}
+
+.macro-form-exit-confirmation p {
+  margin: 0.65rem 0 1.5rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.macro-form-exit-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.macro-form-exit-confirmation-actions .btn-danger {
+  background: var(--color-error);
+  color: white;
+}
+
+.macro-form-exit-confirmation-actions .btn-danger:hover,
+.macro-form-exit-confirmation-actions .btn-danger:focus-visible {
+  filter: brightness(1.1);
+}
+
 @media (max-width: 768px) {
   .macro-form-actions {
     flex-direction: column;
   }
 
-  .macro-form-actions .btn {
+  .macro-form-actions .btn,
+  .macro-form-exit-confirmation-actions .btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .macro-form-exit-confirmation-actions {
+    flex-direction: column;
   }
 }

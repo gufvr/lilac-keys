@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useRef, useCallback, FormEvent } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { FolderTreePicker } from "../FolderTreePicker/FolderTreePicker";
 import { RichTextEditor } from "../RichTextEditor";
@@ -10,6 +10,13 @@ interface MacroFormProps {
   onCancel: () => void;
   onSuccess?: () => void;
   folders?: Folder[];
+}
+
+interface MacroFormValues {
+  nome: string;
+  atalho: string;
+  textoExpandido: string;
+  folderId: string;
 }
 
 export function MacroForm({
@@ -24,18 +31,72 @@ export function MacroForm({
   const [textoExpandido, setTextoExpandido] = useState("");
   const [folderId, setFolderId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isExitConfirmationOpen, setIsExitConfirmationOpen] = useState(false);
+  const initialValuesRef = useRef<MacroFormValues>();
+  const cancelExitButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (macro) {
-      setNome(macro.nome);
-      setAtalho(macro.atalho);
-      setTextoExpandido(macro.textoExpandido);
-      setFolderId(macro.folderId ?? "");
-    }
+    const initialValues = {
+      nome: macro?.nome ?? "",
+      atalho: macro?.atalho ?? "",
+      textoExpandido: macro?.textoExpandido ?? "",
+      folderId: macro?.folderId ?? "",
+    };
+    initialValuesRef.current = initialValues;
+    setNome(initialValues.nome);
+    setAtalho(initialValues.atalho);
+    setTextoExpandido(initialValues.textoExpandido);
+    setFolderId(initialValues.folderId);
+    setError(null);
+    setIsExitConfirmationOpen(false);
   }, [macro]);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (isExitConfirmationOpen) cancelExitButtonRef.current?.focus();
+  }, [isExitConfirmationOpen]);
+
+  const hasUnsavedChanges = useCallback(() => {
+    const initialValues = initialValuesRef.current;
+    return (
+      !initialValues ||
+      nome !== initialValues.nome ||
+      atalho !== initialValues.atalho ||
+      textoExpandido !== initialValues.textoExpandido ||
+      folderId !== initialValues.folderId
+    );
+  }, [atalho, folderId, nome, textoExpandido]);
+
+  const closeForm = useCallback(() => {
+    setIsExitConfirmationOpen(false);
+    setError(null);
+    onCancel();
+  }, [onCancel]);
+
+  const requestClose = useCallback(() => {
+    if (hasUnsavedChanges()) {
+      setIsExitConfirmationOpen(true);
+      return;
+    }
+    closeForm();
+  }, [closeForm, hasUnsavedChanges]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      if (isExitConfirmationOpen) {
+        setIsExitConfirmationOpen(false);
+      } else {
+        requestClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isExitConfirmationOpen, requestClose]);
+
+  const saveMacro = () => {
     setError(null);
 
     const result = onSubmit({
@@ -52,18 +113,16 @@ export function MacroForm({
       setFolderId("");
       setError(null);
       onSuccess?.();
+      return true;
     } else {
       setError(result.error || "Erro ao salvar macro");
+      return false;
     }
   };
 
-  const handleCancel = () => {
-    setNome("");
-    setAtalho("");
-    setTextoExpandido("");
-    setFolderId("");
-    setError(null);
-    onCancel();
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    saveMacro();
   };
 
   return (
@@ -73,7 +132,7 @@ export function MacroForm({
       aria-modal="true"
       aria-labelledby="macro-form-title"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) handleCancel();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div className="macro-form-container">
@@ -154,7 +213,7 @@ export function MacroForm({
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={handleCancel}
+            onClick={requestClose}
           >
             <span className="material-symbols-outlined">close</span>
             Cancelar
@@ -166,6 +225,63 @@ export function MacroForm({
         </div>
         </form>
       </div>
+      {isExitConfirmationOpen && (
+        <div
+          className="macro-form-exit-confirmation-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsExitConfirmationOpen(false);
+            }
+          }}
+        >
+          <div
+            className="macro-form-exit-confirmation card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="macro-form-exit-confirmation-title"
+            aria-describedby="macro-form-exit-confirmation-description"
+          >
+            <div className="macro-form-exit-confirmation-icon" aria-hidden="true">
+              <span className="material-symbols-outlined">warning</span>
+            </div>
+            <h3 id="macro-form-exit-confirmation-title">
+              Alterações não salvas
+            </h3>
+            <p id="macro-form-exit-confirmation-description">
+              Você possui alterações não salvas. O que deseja fazer?
+            </p>
+            <div className="macro-form-exit-confirmation-actions">
+              <button
+                ref={cancelExitButtonRef}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setIsExitConfirmationOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (!saveMacro()) setIsExitConfirmationOpen(false);
+                }}
+              >
+                <span className="material-symbols-outlined">save</span>
+                Salvar e sair
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={closeForm}
+              >
+                <span className="material-symbols-outlined">logout</span>
+                Sair sem salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
