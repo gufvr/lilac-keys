@@ -56,6 +56,29 @@ export function nextOrderInScope<T extends OrderedItem>(
   return orders.length ? Math.max(...orders) + 1 : 0;
 }
 
+export function prependItemInScope<T extends OrderedItem>(
+  items: T[],
+  item: T,
+  scope: string | undefined,
+  getScope: (item: T) => string | undefined,
+): T[] {
+  const scopedItems = sortItemsByOrder(
+    items.filter((current) => getScope(current) === scope),
+  );
+  const orderById = new Map(
+    scopedItems.map((current, index) => [current.id, index + 1]),
+  );
+
+  return [
+    ...items.map((current) =>
+      orderById.has(current.id)
+        ? { ...current, order: orderById.get(current.id) }
+        : current,
+    ),
+    { ...item, order: 0 },
+  ];
+}
+
 export function reorderScopedItems<T extends OrderedItem>(
   items: T[],
   ids: string[],

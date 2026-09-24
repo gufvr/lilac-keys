@@ -130,6 +130,16 @@
   margin-top: 1.5rem;
 }
 
+.macro-form-save-shortcut {
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .macro-form-exit-confirmation-backdrop {
   position: fixed;
   inset: 0;

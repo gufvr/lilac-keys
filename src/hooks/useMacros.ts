@@ -7,6 +7,7 @@ import { stripUnsupportedMacroImages } from "../utils/macroImages";
 import {
   ItemPlacement,
   nextOrderInScope,
+  prependItemInScope,
   reorderScopedItems,
   sortItemsByOrder,
 } from "../utils/itemOrdering";
@@ -65,14 +66,16 @@ export function useMacros() {
       const newMacro: Macro = {
         ...sanitizedMacroData,
         id: crypto.randomUUID(),
-        order: nextOrderInScope(
-          macros,
+      };
+
+      setMacros((prev) =>
+        prependItemInScope(
+          prev,
+          newMacro,
           sanitizedMacroData.folderId,
           (macro) => macro.folderId,
         ),
-      };
-
-      setMacros((prev) => [...prev, newMacro]);
+      );
       return { success: true };
     },
     [macros],

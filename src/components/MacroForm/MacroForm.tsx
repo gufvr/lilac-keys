@@ -33,6 +33,9 @@ export function MacroForm({
   const [error, setError] = useState<string | null>(null);
   const [isExitConfirmationOpen, setIsExitConfirmationOpen] = useState(false);
   const initialValuesRef = useRef<MacroFormValues>();
+  const formRef = useRef<HTMLFormElement>(null);
+  const nomeInputRef = useRef<HTMLInputElement>(null);
+  const atalhoInputRef = useRef<HTMLInputElement>(null);
   const cancelExitButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -80,21 +83,19 @@ export function MacroForm({
     closeForm();
   }, [closeForm, hasUnsavedChanges]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-
-      event.preventDefault();
-      if (isExitConfirmationOpen) {
-        setIsExitConfirmationOpen(false);
-      } else {
-        requestClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isExitConfirmationOpen, requestClose]);
+  const focusFirstInvalidField = useCallback(() => {
+    if (!nome.trim()) {
+      nomeInputRef.current?.focus();
+      return;
+    }
+    if (!atalho.trim()) {
+      atalhoInputRef.current?.focus();
+      return;
+    }
+    if (!textoExpandido.trim()) {
+      document.getElementById("textoExpandido")?.focus();
+    }
+  }, [atalho, nome, textoExpandido]);
 
   const saveMacro = () => {
     setError(null);
@@ -114,11 +115,38 @@ export function MacroForm({
       setError(null);
       onSuccess?.();
       return true;
-    } else {
-      setError(result.error || "Erro ao salvar macro");
-      return false;
     }
+
+    setError(result.error || "Erro ao salvar macro");
+    focusFirstInvalidField();
+    return false;
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut =
+        event.key === "Enter" && (event.ctrlKey || event.metaKey);
+      if (isSaveShortcut) {
+        event.preventDefault();
+        if (!event.repeat && !isExitConfirmationOpen) {
+          formRef.current?.requestSubmit();
+        }
+        return;
+      }
+
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      if (isExitConfirmationOpen) {
+        setIsExitConfirmationOpen(false);
+      } else {
+        requestClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isExitConfirmationOpen, requestClose]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -136,7 +164,7 @@ export function MacroForm({
       }}
     >
       <div className="macro-form-container">
-        <form className="macro-form card" onSubmit={handleSubmit}>
+        <form ref={formRef} className="macro-form card" onSubmit={handleSubmit}>
         <div className="macro-form-header">
           <h2 id="macro-form-title" className="macro-form-title">
             <span className="material-symbols-outlined">
@@ -147,7 +175,7 @@ export function MacroForm({
         </div>
 
         {error && (
-          <div className="macro-form-error">
+          <div className="macro-form-error" role="alert">
             <span className="material-symbols-outlined">error</span>
             {error}
           </div>
@@ -170,6 +198,7 @@ export function MacroForm({
             Nome da Macro
           </label>
           <input
+            ref={nomeInputRef}
             id="nome"
             type="text"
             className="input"
@@ -185,6 +214,7 @@ export function MacroForm({
             Atalho
           </label>
           <input
+            ref={atalhoInputRef}
             id="atalho"
             type="text"
             className="input"
@@ -218,9 +248,14 @@ export function MacroForm({
             <span className="material-symbols-outlined">close</span>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            title="Salvar com Ctrl ou Command + Enter"
+          >
             <span className="material-symbols-outlined">save</span>
             {macro ? "Salvar Alterações" : "Criar Macro"}
+            <span className="macro-form-save-shortcut">Ctrl + Enter</span>
           </button>
         </div>
         </form>

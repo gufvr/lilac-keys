@@ -4,6 +4,7 @@ import test from "node:test";
 import type { Folder, Macro } from "../src/types/macro.ts";
 import {
   canReorderVisibleItems,
+  prependItemInScope,
   reorderScopedItems,
   sortItemsByOrder,
 } from "../src/utils/itemOrdering.ts";
@@ -134,4 +135,21 @@ test("ordem e associação de pasta sobrevivem à serialização de storage e ex
     "<p>a</p>",
     "<p>b</p>",
   ]);
+});
+
+test("prepends a new snippet without changing sibling order", () => {
+  const initial = [
+    macro("root", undefined, 0),
+    macro("first", "folder", 0),
+    macro("second", "folder", 1),
+  ];
+  const result = prependItemInScope(
+    initial,
+    macro("new", "folder"),
+    "folder",
+    (item) => item.folderId,
+  );
+
+  assert.deepEqual(idsInFolder(result, "folder"), ["new", "first", "second"]);
+  assert.deepEqual(idsInFolder(result), ["root"]);
 });
