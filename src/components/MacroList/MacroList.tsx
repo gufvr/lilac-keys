@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
+import { SelectionActions } from "./SelectionActions";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import {
   canReorderVisibleItems,
@@ -87,6 +88,16 @@ interface MacroDropTarget {
   placement: MacroDropPlacement;
 }
 
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return Boolean(
+    target.closest(
+      "input, textarea, select, [contenteditable='true'], [role='textbox']",
+    ),
+  );
+}
+
 export function MacroList({
   macros,
   folders,
@@ -129,7 +140,12 @@ export function MacroList({
   const [macroDragIds, setMacroDragIds] = useState<string[]>([]);
   const [macroDropTarget, setMacroDropTarget] =
     useState<MacroDropTarget>();
+  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] =
+    useState(false);
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
+  const deleteConfirmationRef = useRef<HTMLDivElement>(null);
+  const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const suppressFolderClickRef = useRef(false);
 
@@ -357,34 +373,134 @@ export function MacroList({
     setSelectedFolders((ids) =>
       ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
     );
-  const selectAll = () =>
-    setSelected(
-      selected.length === filteredMacros.length
-        ? []
-        : filteredMacros.map((macro) => macro.id),
-    );
-  const selectAllFolders = () =>
-    setSelectedFolders(
-      selectedFolders.length === childFolders.length
-        ? []
-        : childFolders.map((folder) => folder.id),
-    );
-  const bulkDelete = () => {
-    if (window.confirm(`Excluir ${selected.length} macro(s)?`)) {
-      onDeleteSelected(selected);
-      setSelected([]);
+  const visibleMacroIds = filteredMacros.map((macro) => macro.id);
+  const visibleFolderIds =
+    query.trim() === "" && folderFilter === "all"
+      ? childFolders.map((folder) => folder.id)
+      : [];
+  const allVisibleMacrosSelected =
+    visibleMacroIds.length > 0 &&
+    visibleMacroIds.every((id) => selected.includes(id));
+  const allVisibleFoldersSelected =
+    visibleFolderIds.length > 0 &&
+    visibleFolderIds.every((id) => selectedFolders.includes(id));
+  const toggleVisibleMacros = () => {
+    const visibleMacros = new Set(visibleMacroIds);
+    if (allVisibleMacrosSelected) {
+      setSelected((ids) => ids.filter((id) => !visibleMacros.has(id)));
+      return;
     }
+
+    setSelected((ids) => [...new Set([...ids, ...visibleMacroIds])]);
   };
-  const bulkDeleteFolders = () => {
-    if (
-      window.confirm(
-        `Excluir ${selectedFolders.length} pasta(s) e todo o seu conteúdo?`,
-      )
-    ) {
-      onDeleteFolders(selectedFolders);
-      setSelectedFolders([]);
+  const toggleVisibleFolders = () => {
+    const visibleFolders = new Set(visibleFolderIds);
+    if (allVisibleFoldersSelected) {
+      setSelectedFolders((ids) =>
+        ids.filter((id) => !visibleFolders.has(id)),
+      );
+      return;
     }
+
+    setSelectedFolders((ids) => [...new Set([...ids, ...visibleFolderIds])]);
   };
+  const closeDeleteConfirmation = useCallback(() => {
+    setIsDeleteConfirmationOpen(false);
+    window.requestAnimationFrame(() => {
+      if (deleteReturnFocusRef.current?.isConnected) {
+        deleteReturnFocusRef.current.focus();
+      }
+    });
+  }, []);
+  const requestBulkDelete = useCallback(() => {
+    if (!selectedFolders.length && !selected.length) return;
+    deleteReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setIsDeleteConfirmationOpen(true);
+  }, [selected, selectedFolders]);
+  const confirmBulkDelete = () => {
+    if (selectedFolders.length) onDeleteFolders(selectedFolders);
+    if (selected.length) onDeleteSelected(selected);
+    setSelectedFolders([]);
+    setSelected([]);
+    setIsDeleteConfirmationOpen(false);
+  };
+
+  useEffect(() => {
+    if (!isDeleteConfirmationOpen) return;
+
+    cancelDeleteButtonRef.current?.focus();
+    const handleConfirmationKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDeleteConfirmation();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(
+        deleteConfirmationRef.current?.querySelectorAll<HTMLButtonElement>(
+          "button:not(:disabled)",
+        ) ?? [],
+      );
+      if (!buttons.length) return;
+
+      const firstButton = buttons[0];
+      const lastButton = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === firstButton) {
+        event.preventDefault();
+        lastButton.focus();
+      } else if (!event.shiftKey && document.activeElement === lastButton) {
+        event.preventDefault();
+        firstButton.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleConfirmationKeyDown);
+    return () =>
+      window.removeEventListener("keydown", handleConfirmationKeyDown);
+  }, [closeDeleteConfirmation, isDeleteConfirmationOpen]);
+
+  useEffect(() => {
+    if (!selected.length && !selectedFolders.length) {
+      setIsDeleteConfirmationOpen(false);
+      return;
+    }
+
+    const handleDeleteShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Delete" ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        isDeleteConfirmationOpen ||
+        folderToMove ||
+        isMacroMoveModalOpen ||
+        isFolderMoveModalOpen ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      requestBulkDelete();
+    };
+
+    window.addEventListener("keydown", handleDeleteShortcut);
+    return () => window.removeEventListener("keydown", handleDeleteShortcut);
+  }, [
+    folderToMove,
+    isDeleteConfirmationOpen,
+    isFolderMoveModalOpen,
+    isMacroMoveModalOpen,
+    requestBulkDelete,
+    selected.length,
+    selectedFolders.length,
+  ]);
   const renameFolder = (folder: Folder) => {
     const name = window.prompt("Novo nome da pasta:", folder.name);
     if (name === null || name.trim() === folder.name) return;
@@ -628,83 +744,39 @@ export function MacroList({
             <span className="material-symbols-outlined">list</span>
             Macros ({macros.length})
           </h2>
-          <button
-            className="btn btn-primary"
-            onClick={() => onCreateMacro(currentFolderId)}
-          >
-            <span className="material-symbols-outlined">add</span>
-            Nova Macro
-          </button>
+          <div className="macro-list-heading-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => onCreateFolder(currentFolderId)}
+            >
+              <span className="material-symbols-outlined">create_new_folder</span>
+              Nova pasta
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => onCreateMacro(currentFolderId)}
+            >
+              <span className="material-symbols-outlined">add</span>
+              Nova Macro
+            </button>
+          </div>
         </div>
       </div>
-      <div className="macro-list-bulk">
-        {childFolders.length > 0 && (
-          <>
-            <span>{selectedFolders.length} pasta(s) selecionada(s)</span>
-            <button
-              className="btn btn-danger"
-              disabled={!selectedFolders.length}
-              onClick={bulkDeleteFolders}
-            >
-              Excluir pastas selecionadas
-            </button>
-          </>
-        )}
-        {childFolders.length > 0 && (
-          <button className="btn btn-secondary" onClick={selectAllFolders}>
-            {selectedFolders.length === childFolders.length
-              ? "Desmarcar todas as pastas"
-              : "Selecionar todas as pastas"}
-          </button>
-        )}
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={!selectedFolders.length}
-          onClick={() => setIsFolderMoveModalOpen(true)}
-        >
-          <span className="material-symbols-outlined">drive_file_move</span>
-          Mover pastas para...
-        </button>
-        <button className="btn btn-secondary" onClick={selectAll}>
-          {selected.length === filteredMacros.length
-            ? "Desmarcar todos"
-            : "Selecionar todos"}
-        </button>
-        <span>{selected.length} selecionada(s)</span>
-        <button
-          className="btn btn-secondary"
-          disabled={!selected.length}
-          onClick={() => onExport(selected, "json")}
-        >
-          <span className="material-symbols-outlined">download</span>
-          Exportar JSON
-        </button>
-        <button
-          className="btn btn-secondary"
-          disabled={!selected.length}
-          onClick={() => onExport(selected, "txt")}
-        >
-          <span className="material-symbols-outlined">download</span>
-          Exportar TXT
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={!selected.length}
-          onClick={() => setIsMacroMoveModalOpen(true)}
-        >
-          <span className="material-symbols-outlined">drive_file_move</span>
-          Mover para...
-        </button>
-        <button
-          className="btn btn-danger"
-          disabled={!selected.length}
-          onClick={bulkDelete}
-        >
-          Excluir selecionadas
-        </button>
-      </div>
+      <SelectionActions
+        selectedMacroCount={selected.length}
+        selectedFolderCount={selectedFolders.length}
+        visibleMacroCount={visibleMacroIds.length}
+        visibleFolderCount={visibleFolderIds.length}
+        allVisibleMacrosSelected={allVisibleMacrosSelected}
+        allVisibleFoldersSelected={allVisibleFoldersSelected}
+        onToggleVisibleMacros={toggleVisibleMacros}
+        onToggleVisibleFolders={toggleVisibleFolders}
+        onExportJson={() => onExport(selected, "json")}
+        onExportTxt={() => onExport(selected, "txt")}
+        onMoveMacros={() => setIsMacroMoveModalOpen(true)}
+        onMoveFolders={() => setIsFolderMoveModalOpen(true)}
+        onDeleteSelection={requestBulkDelete}
+      />
       <div className="macro-list-toolbar">
         <input
           className="input"
@@ -725,13 +797,6 @@ export function MacroList({
             </option>
           ))}
         </select>
-        <button
-          className="btn btn-secondary"
-          onClick={() => onCreateFolder(currentFolderId)}
-        >
-          <span className="material-symbols-outlined">create_new_folder</span>
-          Nova pasta
-        </button>
       </div>
       {query.trim() === "" &&
         folderFilter === "all" &&
@@ -1262,6 +1327,85 @@ export function MacroList({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+      {isDeleteConfirmationOpen && (
+        <div
+          className="macro-selection-delete-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeDeleteConfirmation();
+            }
+          }}
+        >
+          <div
+            ref={deleteConfirmationRef}
+            className="macro-selection-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="macro-selection-delete-title"
+            aria-describedby="macro-selection-delete-description"
+          >
+            <div className="macro-selection-delete-icon" aria-hidden="true">
+              <span className="material-symbols-outlined">delete</span>
+            </div>
+            <h3 id="macro-selection-delete-title">Excluir seleção?</h3>
+            <p id="macro-selection-delete-description">
+              Confira os itens que serão excluídos permanentemente:
+            </p>
+            <div className="macro-selection-delete-summary">
+              {selectedFolders.length > 0 && (
+                <div className="macro-selection-delete-summary-item">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    folder
+                  </span>
+                  <span>
+                    <strong>
+                      {selectedFolders.length}{" "}
+                      {selectedFolders.length === 1 ? "pasta" : "pastas"}
+                    </strong>
+                    <small>Incluindo todo o conteúdo das pastas</small>
+                  </span>
+                </div>
+              )}
+              {selected.length > 0 && (
+                <div className="macro-selection-delete-summary-item">
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    description
+                  </span>
+                  <span>
+                    <strong>
+                      {selected.length}{" "}
+                      {selected.length === 1 ? "snippet" : "snippets"}
+                    </strong>
+                    <small>Selecionados diretamente na lista</small>
+                  </span>
+                </div>
+              )}
+            </div>
+            <p className="macro-selection-delete-warning">
+              Esta ação não pode ser desfeita.
+            </p>
+            <div className="macro-selection-delete-actions">
+              <button
+                ref={cancelDeleteButtonRef}
+                type="button"
+                className="btn btn-secondary"
+                onClick={closeDeleteConfirmation}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={confirmBulkDelete}
+              >
+                <span className="material-symbols-outlined">delete</span>
+                Excluir seleção
+              </button>
             </div>
           </div>
         </div>

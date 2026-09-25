@@ -468,7 +468,7 @@
 
 .macro-list-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr) auto;
+  grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr);
   align-items: center;
 }
 
@@ -481,15 +481,102 @@
 }
 
 .macro-list-bulk {
+  justify-content: space-between;
   padding: 0.75rem;
   background: var(--color-bg-tertiary);
   border-radius: 0.5rem;
-  flex-wrap: wrap;
 }
 
-.macro-list-bulk .input {
-  width: auto;
-  min-width: 170px;
+.macro-selection-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+}
+
+.macro-selection-summary span {
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+}
+
+.macro-selection-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.macro-selection-actions {
+  position: relative;
+}
+
+.macro-selection-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 8;
+  width: max-content;
+  min-width: 13.5rem;
+  max-width: min(19rem, calc(100vw - 2rem));
+  padding: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-lg);
+}
+
+.macro-selection-menu-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.macro-selection-menu-group.is-separated {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.macro-selection-menu-title {
+  padding: 0.35rem 0.55rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.macro-selection-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.macro-selection-menu-action:hover,
+.macro-selection-menu-action:focus-visible {
+  background: var(--color-bg-tertiary);
+  color: var(--color-primary);
+  outline: none;
+}
+
+.macro-selection-menu-action-danger {
+  color: var(--color-error);
+}
+
+.macro-selection-menu-action-danger:hover,
+.macro-selection-menu-action-danger:focus-visible {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
 }
 
 .macro-list-title {
@@ -506,6 +593,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.macro-list-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .macro-list-grid {
@@ -541,6 +634,94 @@
   justify-content: center;
   gap: 0.75rem;
   margin-top: 1.25rem;
+}
+
+.macro-selection-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.macro-selection-delete-dialog {
+  width: min(29rem, 100%);
+  padding: 1.5rem;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 0.75rem;
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-xl);
+}
+
+.macro-selection-delete-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.85rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
+}
+
+.macro-selection-delete-dialog h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+}
+
+.macro-selection-delete-dialog > p {
+  margin: 0.65rem 0 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.macro-selection-delete-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.macro-selection-delete-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.macro-selection-delete-summary-item > .material-symbols-outlined {
+  color: var(--color-primary);
+}
+
+.macro-selection-delete-summary-item > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.macro-selection-delete-summary-item small {
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+}
+
+.macro-selection-delete-dialog > .macro-selection-delete-warning {
+  margin-bottom: 1.25rem;
+  color: var(--color-error);
+}
+
+.macro-selection-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 @media (max-width: 768px) {
@@ -579,6 +760,27 @@
     flex-direction: column;
   }
 
+  .macro-selection-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .macro-selection-actions,
+  .macro-selection-actions > .btn {
+    width: 100%;
+  }
+
+  .macro-selection-actions {
+    grid-column: 1 / -1;
+  }
+
+  .macro-selection-menu {
+    right: 0;
+    left: 0;
+    width: auto;
+    min-width: 0;
+  }
+
   .macro-list-toolbar .input,
   .macro-list-bulk .input,
   .macro-list-toolbar .btn,
@@ -592,6 +794,11 @@
 
   .macro-list-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .macro-list-heading-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .macro-list-toolbar select.input {
@@ -608,6 +815,15 @@
   }
 
   .macro-list-empty-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .macro-selection-delete-actions {
+    flex-direction: column;
+  }
+
+  .macro-selection-delete-actions .btn {
     width: 100%;
     justify-content: center;
   }
