@@ -205,7 +205,6 @@ export function MacroForm({
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             placeholder="Ex: Saudação padrão"
-            required
           />
         </div>
 
@@ -221,7 +220,6 @@ export function MacroForm({
             value={atalho}
             onChange={(e) => setAtalho(e.target.value)}
             placeholder="Ex: /saudacao"
-            required
           />
           <small className="macro-form-hint">
             Digite o atalho que será usado para expandir esta macro
@@ -250,12 +248,15 @@ export function MacroForm({
           </button>
           <button
             type="submit"
-            className="btn btn-primary"
+            className="btn btn-primary macro-form-save-button"
             title="Salvar com Ctrl ou Command + Enter"
+            aria-label="Salvar macro. Atalho: Ctrl ou Command mais Enter"
           >
             <span className="material-symbols-outlined">save</span>
-            {macro ? "Salvar Alterações" : "Criar Macro"}
-            <span className="macro-form-save-shortcut">Ctrl + Enter</span>
+            <span className="macro-form-save-copy">
+              <span>Salvar</span>
+              <span className="macro-form-save-shortcut">Ctrl + Enter</span>
+            </span>
           </button>
         </div>
         </form>

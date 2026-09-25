@@ -46,7 +46,11 @@ export function Help() {
                   inserido
                 </li>
               </ul>
-              <li>Clique em "Criar Macro" para salvar</li>
+              <li>
+                Clique em "Criar Macro" ou pressione <kbd>Ctrl</kbd> +{" "}
+                <kbd>Enter</kbd> para salvar. No macOS, use <kbd>Command</kbd>{" "}
+                + <kbd>Enter</kbd>.
+              </li>
             </ol>
             <p className="help-note">
               Use marcadores como <code>%NOME%</code> no texto expandido. O
@@ -70,8 +74,9 @@ export function Help() {
               </div>
               <p className="help-note">
                 💡 <strong>Dica:</strong> Quando a extensão estiver instalada,
-                você poderá digitar o atalho (ex: "/oi") em qualquer campo de
-                texto e pressionar <kbd>"Shift"</kbd> +{" "}
+                você poderá digitar o atalho com ou sem a barra (ex: "/oi" ou
+                "oi") em qualquer campo de texto e pressionar{" "}
+                <kbd>"Shift"</kbd> +{" "}
                 <kbd>"Barra de Espaço" </kbd>
                 para expandir a macro automaticamente.
               </p>
@@ -94,11 +99,21 @@ export function Help() {
               <li>
                 Clique no ícone{" "}
                 <span className="material-symbols-outlined help-inline-icon">
+                  content_copy
+                </span>{" "}
+                para clonar uma macro e editar a cópia antes de salvá-la
+              </li>
+              <li>
+                Clique no ícone{" "}
+                <span className="material-symbols-outlined help-inline-icon">
                   delete
                 </span>{" "}
                 para excluir uma macro
               </li>
-              <li>Você pode cancelar a edição clicando em "Cancelar"</li>
+              <li>
+                Você pode salvar com <kbd>Ctrl</kbd> + <kbd>Enter</kbd> ou
+                cancelar a edição. Alterações não salvas pedem confirmação.
+              </li>
             </ul>
           </div>
 
@@ -109,14 +124,23 @@ export function Help() {
             </h3>
             <ul className="help-list">
               <li>
+                <span className="material-symbols-outlined help-inline-icon">
+                  download
+                </span>{" "}
                 <strong>Exportar JSON:</strong> Salva todas as macros em formato
                 JSON (recomendado para backup)
               </li>
               <li>
+                <span className="material-symbols-outlined help-inline-icon">
+                  description
+                </span>{" "}
                 <strong>Exportar TXT:</strong> Salva as macros em formato texto
                 simples (fácil de editar manualmente)
               </li>
               <li>
+                <span className="material-symbols-outlined help-inline-icon">
+                  upload
+                </span>{" "}
                 <strong>Importar:</strong> Carregue um arquivo JSON ou TXT para
                 restaurar suas macros
               </li>
