@@ -14,6 +14,7 @@ export interface FolderCloneResult {
 interface FolderCloneOptions {
   createId?: () => string;
   now?: () => number;
+  rootName?: string;
 }
 
 function collectSubtreeIds(sourceId: string, folders: Folder[]): Set<string> {
@@ -31,7 +32,7 @@ function collectSubtreeIds(sourceId: string, folders: Folder[]): Set<string> {
   return ids;
 }
 
-function uniqueFolderCopyName(source: Folder, folders: Folder[]): string {
+export function createFolderCopyName(source: Folder, folders: Folder[]): string {
   const usedNames = new Set(
     folders
       .filter((folder) => folder.parentId === source.parentId)
@@ -65,6 +66,32 @@ export function cloneFolderTree(
 
   const createId = options.createId ?? (() => crypto.randomUUID());
   const now = options.now ?? (() => Date.now());
+  const requestedRootName = options.rootName?.trim();
+  if (options.rootName !== undefined && !requestedRootName) {
+    return {
+      success: false,
+      folders,
+      macros,
+      adjustedShortcuts: 0,
+      error: "O nome da pasta é obrigatório",
+    };
+  }
+  if (
+    requestedRootName &&
+    folders.some(
+      (folder) =>
+        folder.parentId === source.parentId &&
+        folder.name.toLowerCase() === requestedRootName.toLowerCase(),
+    )
+  ) {
+    return {
+      success: false,
+      folders,
+      macros,
+      adjustedShortcuts: 0,
+      error: "Esta pasta já existe neste local",
+    };
+  }
   const subtreeIds = collectSubtreeIds(sourceId, folders);
   const subtree = folders.filter((folder) => subtreeIds.has(folder.id));
   const idBySourceId = new Map<string, string>();
@@ -74,7 +101,9 @@ export function cloneFolderTree(
     ...folder,
     id: idBySourceId.get(folder.id)!,
     name:
-      folder.id === sourceId ? uniqueFolderCopyName(source, folders) : folder.name,
+      folder.id === sourceId
+        ? (requestedRootName ?? createFolderCopyName(source, folders))
+        : folder.name,
     createdAt: now() + index,
     parentId:
       folder.id === sourceId

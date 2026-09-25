@@ -89,6 +89,34 @@ test("incrementa nomes e atalhos quando já existem cópias", () => {
   assert.equal(clonedMacro.atalho, "bv-copia-2");
 });
 
+test("usa o nome informado para a cópia da pasta", () => {
+  let id = 0;
+  const result = cloneFolderTree(folders, macros, "source", {
+    createId: () => `custom-${++id}`,
+    now: () => 100,
+    rootName: "Clientes - Arquivo",
+  });
+  assert.equal(result.success, true);
+  const clonedRoot = result.folders.find(
+    (folder) => folder.id === result.clonedFolderId,
+  )!;
+  assert.equal(clonedRoot.name, "Clientes - Arquivo");
+});
+
+test("recusa nome vazio ou duplicado ao clonar uma pasta", () => {
+  const emptyName = cloneFolderTree(folders, macros, "source", {
+    rootName: "   ",
+  });
+  assert.equal(emptyName.success, false);
+  assert.equal(emptyName.error, "O nome da pasta é obrigatório");
+
+  const duplicateName = cloneFolderTree(folders, macros, "source", {
+    rootName: "Antes",
+  });
+  assert.equal(duplicateName.success, false);
+  assert.equal(duplicateName.error, "Esta pasta já existe neste local");
+});
+
 test("não altera os arrays quando a pasta não existe", () => {
   const result = cloneFolderTree(folders, macros, "missing");
   assert.equal(result.success, false);

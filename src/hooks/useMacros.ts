@@ -528,8 +528,9 @@ export function useMacros() {
   const cloneFolder = useCallback(
     (
       id: string,
+      name?: string,
     ): { success: boolean; error?: string; adjustedShortcuts: number } => {
-      const result = cloneFolderTree(folders, macros, id);
+      const result = cloneFolderTree(folders, macros, id, { rootName: name });
       if (!result.success) {
         return {
           success: false,

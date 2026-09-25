@@ -9,6 +9,7 @@ import {
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import { SelectionActions } from "./SelectionActions";
+import { createFolderCopyName } from "../../utils/folderClone";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import {
   canReorderVisibleItems,
@@ -62,6 +63,7 @@ interface MacroListProps {
   onDeleteFolders: (ids: string[]) => void;
   onCloneFolder: (
     id: string,
+    name?: string,
   ) => { success: boolean; error?: string; adjustedShortcuts: number };
   onExportFolder: (id: string, format: "json" | "txt") => void;
 }
@@ -91,11 +93,16 @@ interface MacroDropTarget {
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
 
-  return Boolean(
+  if (
     target.closest(
-      "input, textarea, select, [contenteditable='true'], [role='textbox']",
-    ),
-  );
+      "textarea, select, [contenteditable='true'], [role='textbox']",
+    )
+  ) {
+    return true;
+  }
+
+  const input = target.closest<HTMLInputElement>("input");
+  return Boolean(input && input.type !== "checkbox" && input.type !== "radio");
 }
 
 export function MacroList({
@@ -142,7 +149,11 @@ export function MacroList({
     useState<MacroDropTarget>();
   const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] =
     useState(false);
+  const [folderToClone, setFolderToClone] = useState<Folder | undefined>();
+  const [cloneFolderName, setCloneFolderName] = useState("");
+  const [cloneFolderError, setCloneFolderError] = useState<string>();
   const breadcrumbsRef = useRef<HTMLDivElement>(null);
+  const cloneFolderNameInputRef = useRef<HTMLInputElement>(null);
   const deleteConfirmationRef = useRef<HTMLDivElement>(null);
   const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -478,6 +489,7 @@ export function MacroList({
         event.altKey ||
         event.shiftKey ||
         isDeleteConfirmationOpen ||
+        folderToClone ||
         folderToMove ||
         isMacroMoveModalOpen ||
         isFolderMoveModalOpen ||
@@ -493,6 +505,7 @@ export function MacroList({
     window.addEventListener("keydown", handleDeleteShortcut);
     return () => window.removeEventListener("keydown", handleDeleteShortcut);
   }, [
+    folderToClone,
     folderToMove,
     isDeleteConfirmationOpen,
     isFolderMoveModalOpen,
@@ -533,18 +546,41 @@ export function MacroList({
       setIsMacroMoveModalOpen(false);
     }
   };
-  const cloneFolder = (folder: Folder) => {
-    const result = onCloneFolder(folder.id);
+  const openCloneFolderModal = (folder: Folder) => {
+    setFolderToClone(folder);
+    setCloneFolderName(createFolderCopyName(folder, folders));
+    setCloneFolderError(undefined);
+  };
+  const confirmCloneFolder = () => {
+    if (!folderToClone) return;
+
+    const result = onCloneFolder(folderToClone.id, cloneFolderName);
     if (!result.success) {
-      window.alert(result.error);
+      setCloneFolderError(result.error);
       return;
     }
+    setFolderToClone(undefined);
+    setCloneFolderError(undefined);
     if (result.adjustedShortcuts > 0) {
       window.alert(
         `${result.adjustedShortcuts} atalho(s) foram ajustados para manter valores únicos.`,
       );
     }
   };
+  useEffect(() => {
+    if (!folderToClone) return;
+
+    cloneFolderNameInputRef.current?.focus();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setFolderToClone(undefined);
+      setCloneFolderError(undefined);
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [folderToClone]);
   const toggleMoveFolder = (folderId: string) => {
     setExpandedMoveFolders((ids) => {
       const next = new Set(ids);
@@ -946,7 +982,7 @@ export function MacroList({
                     title="Clonar pasta"
                     aria-label={`Clonar pasta ${folder.name}`}
                     onClick={(event) =>
-                      runFolderAction(event, () => cloneFolder(folder))
+                      runFolderAction(event, () => openCloneFolderModal(folder))
                     }
                   >
                     <span className="material-symbols-outlined">
@@ -1056,6 +1092,74 @@ export function MacroList({
       {filteredMacros.length === 0 && (
         <div className="macro-list-empty">
           <p>Nenhuma macro encontrada.</p>
+        </div>
+      )}
+      {folderToClone && (
+        <div
+          className="macro-folder-clone-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setFolderToClone(undefined);
+              setCloneFolderError(undefined);
+            }
+          }}
+        >
+          <form
+            className="macro-folder-clone-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="macro-folder-clone-title"
+            aria-describedby="macro-folder-clone-description"
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmCloneFolder();
+            }}
+          >
+            <div className="macro-folder-clone-icon" aria-hidden="true">
+              <span className="material-symbols-outlined">content_copy</span>
+            </div>
+            <h3 id="macro-folder-clone-title">Clonar pasta</h3>
+            <p id="macro-folder-clone-description">
+              Escolha o nome da cópia de “{folderToClone.name}”.
+            </p>
+            <label htmlFor="clone-folder-name">Nome da pasta</label>
+            <input
+              ref={cloneFolderNameInputRef}
+              id="clone-folder-name"
+              className="input"
+              value={cloneFolderName}
+              onChange={(event) => {
+                setCloneFolderName(event.target.value);
+                setCloneFolderError(undefined);
+              }}
+              aria-invalid={Boolean(cloneFolderError)}
+              aria-describedby={
+                cloneFolderError ? "clone-folder-name-error" : undefined
+              }
+            />
+            {cloneFolderError && (
+              <p id="clone-folder-name-error" role="alert">
+                {cloneFolderError}
+              </p>
+            )}
+            <div className="macro-folder-clone-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setFolderToClone(undefined);
+                  setCloneFolderError(undefined);
+                }}
+              >
+                Cancelar
+              </button>
+              <button type="submit" className="btn btn-primary">
+                <span className="material-symbols-outlined">content_copy</span>
+                Clonar pasta
+              </button>
+            </div>
+          </form>
         </div>
       )}
       {folderToMove && (

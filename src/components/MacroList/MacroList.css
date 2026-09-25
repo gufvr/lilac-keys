@@ -362,6 +362,71 @@
   background: rgba(0, 0, 0, 0.68);
 }
 
+.macro-folder-clone-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.macro-folder-clone-dialog {
+  width: min(28rem, 100%);
+  padding: 1.5rem;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 0.75rem;
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-xl);
+}
+
+.macro-folder-clone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.85rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.macro-folder-clone-dialog h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+}
+
+.macro-folder-clone-dialog > p {
+  margin: 0.65rem 0 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.macro-folder-clone-dialog > label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.macro-folder-clone-dialog > p[role="alert"] {
+  margin: 0.5rem 0 0;
+  color: var(--color-error);
+}
+
+.macro-folder-clone-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+
 .macro-folder-move-dialog {
   width: min(28rem, 100%);
   max-height: min(32rem, calc(100vh - 2rem));
@@ -824,6 +889,15 @@
   }
 
   .macro-selection-delete-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .macro-folder-clone-actions {
+    flex-direction: column;
+  }
+
+  .macro-folder-clone-actions .btn {
     width: 100%;
     justify-content: center;
   }
