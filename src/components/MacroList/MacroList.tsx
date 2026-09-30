@@ -592,7 +592,12 @@ export function MacroList({
   if (macros.length === 0 && folders.length === 0) {
     return (
       <div className="macro-list-empty">
-        <span className="material-symbols-outlined">inbox</span>
+        <img
+          className="macro-list-empty-visual"
+          src="/lilackeys-empty-fire.gif"
+          alt=""
+          aria-hidden="true"
+        />
         <p>Nenhuma macro cadastrada ainda.</p>
         <p className="macro-list-empty-hint">
           Comece criando sua primeira macro ou pasta.
