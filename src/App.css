@@ -42,12 +42,37 @@
 .footer-project-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  white-space: nowrap;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin: -0.5rem 0 -0.5rem 0.25rem;
+  border-radius: 0.5rem;
+  vertical-align: middle;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
-.footer-project-link .material-symbols-outlined {
-  font-size: 1.05rem;
+#footer .footer-project-link {
+  color: var(--color-primary);
+}
+
+#footer .footer-project-link:hover {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+#footer .footer-project-link:focus-visible {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.footer-project-link svg {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 .app-loading {
