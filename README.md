@@ -49,6 +49,22 @@ Import and export snippets using JSON or TXT files.
 
 JSON is recommended for backups because it preserves folders and snippet organization.
 
+The JSON and TXT buttons on a snippet open an export choice. **Export snippet**
+exports the clicked snippet (or all selected snippets when it is selected) without
+folders; these snippets import into the root. **Export snippet and folder(s)**
+includes only the ancestor folders needed to rebuild their paths. Global exports
+and complete folder exports keep their existing scope.
+
+A single snippet exported without folders uses its shortcut as the suggested
+JSON/TXT filename. Characters invalid in filenames are replaced with underscores;
+other exports use `LilacKeys DD MM YYYY.json` or `.txt`, with the browser's local
+date and spaces instead of hyphens.
+
+Folder-free TXT exports include an optional `<macro-metadata>` line to retain
+snippet IDs and order in the file. The current importer reads this metadata and
+still creates new IDs on import; it also accepts previous TXT files. Use JSON for
+sharing folder-free exports with older LilacKeys versions.
+
 When importing snippets with duplicate names, LilacKeys creates a variation of the name instead of overwriting existing data.
 
 ## Privacy

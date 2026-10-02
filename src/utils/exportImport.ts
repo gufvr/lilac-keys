@@ -23,7 +23,7 @@ export interface ExportPayload {
 export type ExportScope =
   | { kind: "all" }
   | { kind: "folder"; folderId: string }
-  | { kind: "macros"; macroIds: string[] };
+  | { kind: "macros"; macroIds: string[]; includeFolders?: boolean };
 
 export interface ImportMacroConflict {
   name: boolean;
@@ -109,6 +109,17 @@ export function resolveExportData(
 
   const selectedMacroIds = new Set(scope.macroIds);
   const selectedMacros = macros.filter((macro) => selectedMacroIds.has(macro.id));
+  if (scope.includeFolders === false) {
+    return {
+      macros: selectedMacros.map((macro) => {
+        const copy = { ...macro };
+        delete copy.folderId;
+        delete copy.folderName;
+        return copy;
+      }),
+      folders: [],
+    };
+  }
   const selectedFolderIds = collectAncestorFolderIds(
     selectedMacros
       .map((macro) => macro.folderId)
@@ -127,9 +138,10 @@ export function resolveExportData(
 export function serializeExportData(
   data: ImportedData,
   format: "json" | "txt",
+  preserveMacroMetadata = false,
 ): string {
   if (format === "txt") {
-    return buildTreeText(data.macros, data.folders);
+    return buildTreeText(data.macros, data.folders, preserveMacroMetadata);
   }
 
   const exportedFolderIds = new Set(data.folders.map((folder) => folder.id));
@@ -160,21 +172,36 @@ function escapeTreeTextBody(body: string): string {
     .join("\n");
 }
 
+function shortcutFileName(shortcut: string): string {
+  const cleaned = Array.from(shortcut.trim())
+    .map((character) => character.charCodeAt(0) < 32 ? "_" : character)
+    .join("")
+    .replace(/[<>:"/\\|?*]/g, "_")
+    .slice(0, 180)
+    .replace(/[. ]+$/g, "");
+  const name = cleaned || "snippet";
+  // Windows reserves these names even when followed by a file extension.
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)
+    ? `_${name}`
+    : name;
+}
+
 export function exportMacros(
   macros: Macro[],
   format: "json" | "txt" = "json",
   folders: Folder[] = [],
   folderId?: string,
   macroIds?: string[],
+  includeFolders = true,
 ): void {
   try {
     const scope: ExportScope = macroIds
-      ? { kind: "macros", macroIds }
+      ? { kind: "macros", macroIds, includeFolders }
       : folderId
         ? { kind: "folder", folderId }
         : { kind: "all" };
     const exportData = resolveExportData(macros, folders, scope);
-    const dataStr = serializeExportData(exportData, format);
+    const dataStr = serializeExportData(exportData, format, Boolean(macroIds) && !includeFolders);
     const mimeType = format === "txt" ? "text/plain" : "application/json";
     const extension = format;
 
@@ -182,9 +209,15 @@ export function exportMacros(
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `lilac-keys-${folderId ? "folder" : "macros"}-${
-      new Date().toISOString().split("T")[0]
-    }.${extension}`;
+    const now = new Date();
+    const exportDate = [
+      String(now.getDate()).padStart(2, "0"),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getFullYear()),
+    ].join(" ");
+    link.download = scope.kind === "macros" && !includeFolders && exportData.macros.length === 1
+      ? `${shortcutFileName(exportData.macros[0].atalho)}.${extension}`
+      : `LilacKeys ${exportDate}.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -368,6 +401,7 @@ function isExportPayload(data: unknown): data is ExportPayload {
 function buildTreeText(
   macros: Macro[],
   folders: Folder[],
+  preserveMacroMetadata: boolean,
 ): string {
   const lines: string[] = [];
   const childrenByParent = new Map<string | undefined, Folder[]>();
@@ -394,6 +428,9 @@ function buildTreeText(
       .forEach((macro) => {
         lines.push(`${indent}{${macro.atalho}}`);
         lines.push(`${indent}<macro-name>${macro.nome}</macro-name>`);
+        if (preserveMacroMetadata) {
+          lines.push(`${indent}<macro-metadata>${JSON.stringify({ id: macro.id, order: macro.order })}</macro-metadata>`);
+        }
         lines.push(`${indent}<macro-content>`);
         lines.push(escapeTreeTextBody(macro.textoExpandido));
         lines.push(`${indent}</macro-content>`);
@@ -487,6 +524,18 @@ function parseTreeText(content: string): ImportedData | null {
     const nameLine = lines[index + 1]?.trim();
     const nameMatch = nameLine?.match(/^<macro-name>(.*)<\/macro-name>$/);
     index += nameMatch ? 2 : 1;
+    // Optional metadata is emitted by folder-free exports. Legacy TXT keeps
+    // its existing order-by-position behavior and imports still receive new IDs.
+    const metadataMatch = lines[index]?.trim().match(/^<macro-metadata>(.*)<\/macro-metadata>$/);
+    let originalOrder: number | undefined;
+    if (metadataMatch && lines[index + 1]?.trim() === "<macro-content>") {
+      const metadata: unknown = JSON.parse(metadataMatch[1]);
+      if (typeof metadata === "object" && metadata !== null && "order" in metadata &&
+          typeof metadata.order === "number" && Number.isFinite(metadata.order)) {
+        originalOrder = metadata.order;
+      }
+      index += 1;
+    }
     const bodyLines: string[] = [];
     const hasContentBoundary = lines[index]?.trim() === "<macro-content>";
     if (hasContentBoundary) {
@@ -524,7 +573,7 @@ function parseTreeText(content: string): ImportedData | null {
       textoExpandido: hasContentBoundary
         ? bodyLines.join("\n")
         : bodyLines.join("\n").trim(),
-      order: macroOrder,
+      order: originalOrder ?? macroOrder,
       ...(folder
         ? { folderId: folder.id, folderName: folder.name }
         : {}),

@@ -91,8 +91,8 @@ function App() {
     exportMacros(macros, format, folders, folderId);
   };
 
-  const handleExportMacros = (macroIds: string[], format: "json" | "txt") => {
-    exportMacros(macros, format, folders, undefined, macroIds);
+  const handleExportMacros = (macroIds: string[], format: "json" | "txt", includeFolders = true) => {
+    exportMacros(macros, format, folders, undefined, macroIds, includeFolders);
   };
 
   if (loading) {

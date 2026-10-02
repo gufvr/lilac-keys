@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { JSDOM } from "jsdom";
 
 import type { Folder, Macro } from "../src/types/macro.ts";
 import {
   filterImportedData,
+  exportMacros,
   getFolderPath,
   getImportMacroConflicts,
   parseImportedContent,
@@ -49,6 +51,43 @@ const macros: Macro[] = [
   },
 ];
 
+test("download isolado usa o atalho; demais escopos usam LilacKeys DD MM AAAA", (context) => {
+  const dom = new JSDOM("<!doctype html><body></body>");
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const filenames: string[] = [];
+  Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
+  context.mock.method(URL, "createObjectURL", () => "blob:export-test");
+  context.mock.method(URL, "revokeObjectURL", () => {});
+  context.mock.method(dom.window.HTMLAnchorElement.prototype, "click", function (this: HTMLAnchorElement) {
+    filenames.push(this.download);
+  });
+  try {
+    const now = new Date();
+    const exportDate = `${String(now.getDate()).padStart(2, "0")} ${String(now.getMonth() + 1).padStart(2, "0")} ${now.getFullYear()}`;
+    for (const format of ["json", "txt"] as const) {
+      for (const [shortcut, expected] of [
+        ["RecPFSaque", "RecPFSaque"], ["ação😊", "ação😊"],
+        ["/teste:macro?", "_teste_macro_"], ["CON", "_CON"], ["...", "snippet"],
+      ]) {
+        exportMacros([{ ...macros[0], atalho: shortcut }], format, folders, undefined, ["one"], false);
+        assert.equal(filenames.pop(), `${expected}.${format}`);
+      }
+      exportMacros(macros, format, folders, undefined, ["one", "sibling-macro"], false);
+      assert.equal(filenames.pop(), `LilacKeys ${exportDate}.${format}`);
+      exportMacros(macros, format, folders, undefined, ["one"], true);
+      assert.equal(filenames.pop(), `LilacKeys ${exportDate}.${format}`);
+      exportMacros(macros, format, folders);
+      assert.equal(filenames.pop(), `LilacKeys ${exportDate}.${format}`);
+      exportMacros(macros, format, folders, "selected");
+      assert.equal(filenames.pop(), `LilacKeys ${exportDate}.${format}`);
+    }
+  } finally {
+    if (oldDocument) Object.defineProperty(globalThis, "document", oldDocument);
+    else Reflect.deleteProperty(globalThis, "document");
+    dom.window.close();
+  }
+});
+
 test("exporta uma macro com somente seus ancestrais", () => {
   const result = resolveExportData(macros, folders, {
     kind: "macros",
@@ -59,6 +98,58 @@ test("exporta uma macro com somente seus ancestrais", () => {
   assert.equal(result.macros[0].textoExpandido, macros[0].textoExpandido);
   assert.equal(result.macros[0].order, 2);
 });
+
+for (const format of ["json", "txt"] as const) {
+  for (const ids of [["one"], ["one", "sibling-macro"]]) {
+    test(`${format}: exporta ${ids.length} snippets sem pastas e reimporta na raiz`, () => {
+      const originals = macros.map((macro) => ({ ...macro, folderName: "Nome legado" }));
+      const before = JSON.stringify({ macros: originals, folders });
+      const result = resolveExportData(originals, folders, {
+        kind: "macros", macroIds: ids, includeFolders: false,
+      });
+      assert.deepEqual(result.folders, []);
+      assert.deepEqual(result.macros.map((macro) => macro.id), ids);
+      for (const macro of result.macros) {
+        assert.equal("folderId" in macro, false);
+        assert.equal("folderName" in macro, false);
+        const original = originals.find((item) => item.id === macro.id)!;
+        assert.equal(macro.textoExpandido, original.textoExpandido);
+        assert.equal(macro.order, original.order);
+      }
+      const serialized = serializeExportData(result, format, true);
+      if (format === "json") {
+        const payload = JSON.parse(serialized);
+        assert.deepEqual(payload.folders, []);
+        assert.deepEqual(payload.macros, result.macros);
+      } else {
+        assert.doesNotMatch(serialized, /folderId|folderName|\[Raiz\]|\[Selecionada\]|\[Irmã\]/);
+        assert.match(serialized, /<macro-metadata>/);
+      }
+      const parsed = parseImportedContent(serialized, `snippets.${format}`);
+      assert.deepEqual(parsed.folders, []);
+      for (const macro of parsed.macros) {
+        assert.equal(macro.folderId, undefined);
+        assert.equal(macro.folderName, undefined);
+        const original = originals.find((item) => item.atalho === macro.atalho)!;
+        assert.equal(macro.textoExpandido, original.textoExpandido);
+        assert.equal(macro.nome, original.nome);
+        if (original.order !== undefined) assert.equal(macro.order, original.order);
+      }
+      assert.deepEqual(filterImportedData(parsed, parsed.macros.map((macro) => macro.id)).folders, []);
+      assert.equal(JSON.stringify({ macros: originals, folders }), before);
+    });
+  }
+  test(`${format}: modo explícito com pastas mantém somente os caminhos mínimos`, () => {
+    const result = resolveExportData(macros, folders, {
+      kind: "macros", macroIds: ["one", "sibling-macro"], includeFolders: true,
+    });
+    assert.deepEqual(result.folders.map((folder) => folder.id), ["root", "selected", "sibling"]);
+    const parsed = parseImportedContent(serializeExportData(result, format), `paths.${format}`);
+    assert.equal(parsed.macros.length, 2);
+    assert.equal(parsed.folders.length, 3);
+    assert.equal(getFolderPath(parsed.macros.find((macro) => macro.atalho === "uma")?.folderId, parsed.folders), "Raiz / Selecionada");
+  });
+}
 
 test("exporta múltiplas macros sem irmãs ou descendentes não selecionados", () => {
   const result = resolveExportData(macros, folders, {

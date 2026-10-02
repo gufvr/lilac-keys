@@ -204,7 +204,7 @@ export function ImportExport({
                 const conflict = conflicts.get(macro.id);
                 const folderPath = macro.folderId
                   ? getFolderPath(macro.folderId, preview.folders)
-                  : macro.folderName || "Sem pasta";
+                  : macro.folderName || "Raiz";
                 return (
                   <label className="import-preview-item" key={macro.id}>
                     <input

@@ -7,7 +7,7 @@ interface MacroCardProps {
   onEdit: (macro: Macro) => void;
   onClone: (macro: Macro) => void;
   onDelete: (id: string) => void;
-  onExport?: (ids: string[], format: "json" | "txt") => void;
+  onExport?: (ids: string[], format: "json" | "txt", trigger: HTMLButtonElement) => void;
   selected?: boolean;
   onSelect?: (id: string) => void;
   onDragStart?: (id: string) => void;
@@ -126,16 +126,28 @@ export function MacroCard({
           {onExport && (
             <>
               <button
+                type="button"
                 className="btn-icon"
-                onClick={() => onExport([macro.id], "json")}
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                onPointerDown={(event) => event.stopPropagation()}
+                onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                onKeyDown={(event) => event.stopPropagation()}
+                onClick={(event) => onExport([macro.id], "json", event.currentTarget)}
                 aria-label={`Exportar macro ${macro.nome} em JSON`}
                 title="Exportar JSON"
               >
                 <span className="material-symbols-outlined">download</span>
               </button>
               <button
+                type="button"
                 className="btn-icon"
-                onClick={() => onExport([macro.id], "txt")}
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                onPointerDown={(event) => event.stopPropagation()}
+                onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                onKeyDown={(event) => event.stopPropagation()}
+                onClick={(event) => onExport([macro.id], "txt", event.currentTarget)}
                 aria-label={`Exportar macro ${macro.nome} em TXT`}
                 title="Exportar TXT"
               >

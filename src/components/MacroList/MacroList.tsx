@@ -9,6 +9,7 @@ import {
 import { Folder, Macro } from "../../types/macro";
 import { MacroCard } from "../MacroCard/MacroCard";
 import { SelectionActions } from "./SelectionActions";
+import { MacroExportPopover } from "./MacroExportPopover";
 import { createFolderCopyName } from "../../utils/folderClone";
 import { flattenFolders, formatFolderLabel } from "../../utils/folderTree";
 import {
@@ -34,7 +35,7 @@ interface MacroListProps {
   onEdit: (macro: Macro) => void;
   onClone: (macro: Macro) => void;
   onDelete: (id: string) => void;
-  onExport: (ids: string[], format: "json" | "txt") => void;
+  onExport: (ids: string[], format: "json" | "txt", includeFolders?: boolean) => void;
   onCreateFolder: (parentId?: string) => void;
   onDeleteSelected: (ids: string[]) => void;
   onMoveMacros: (
@@ -131,6 +132,11 @@ export function MacroList({
 }: MacroListProps) {
   const [folderFilter, setFolderFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
+  const [exportRequest, setExportRequest] = useState<{
+    ids: string[];
+    format: "json" | "txt";
+    trigger: HTMLButtonElement;
+  }>();
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [isMacroMoveModalOpen, setIsMacroMoveModalOpen] = useState(false);
   const [isFolderMoveModalOpen, setIsFolderMoveModalOpen] = useState(false);
@@ -1036,7 +1042,11 @@ export function MacroList({
             onEdit={onEdit}
             onClone={onClone}
             onDelete={onDelete}
-            onExport={onExport}
+            onExport={(ids, format, trigger) => setExportRequest({
+              ids: selected.includes(macro.id) ? [...selected] : ids,
+              format,
+              trigger,
+            })}
             selected={selected.includes(macro.id)}
             onSelect={toggle}
             dragging={macroDragIds.includes(macro.id)}
@@ -1094,6 +1104,18 @@ export function MacroList({
           />
         ))}
       </div>
+      {exportRequest && (
+        <MacroExportPopover
+          format={exportRequest.format}
+          count={exportRequest.ids.length}
+          trigger={exportRequest.trigger}
+          onClose={() => setExportRequest(undefined)}
+          onExport={(includeFolders) => {
+            onExport(exportRequest.ids, exportRequest.format, includeFolders);
+            setExportRequest(undefined);
+          }}
+        />
+      )}
       {filteredMacros.length === 0 && (
         <div className="macro-list-empty">
           <p>Nenhuma macro encontrada.</p>
