@@ -1,4 +1,4 @@
-import { Folder } from "../types/macro";
+import type { Folder } from "../types/macro.ts";
 
 export interface FolderTreeItem {
   folder: Folder;

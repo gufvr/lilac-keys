@@ -69,6 +69,48 @@
   position: relative;
 }
 
+.macro-form-folder-search {
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.macro-form-folder-search > .input {
+  width: 100%;
+}
+
+.macro-form-folder-search-menu .macro-form-folder-picker-option {
+  width: 100%;
+}
+
+.macro-form-folder-search-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.macro-form-folder-search-copy small,
+.macro-form-folder-search-empty {
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+}
+
+.macro-form-folder-search-empty {
+  margin: 0;
+  padding: 0.65rem;
+}
+
+.macro-form-folder-search-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .macro-form-folder-picker-trigger {
   display: flex;
   align-items: center;
@@ -76,6 +118,11 @@
   width: 100%;
   cursor: pointer;
   text-align: left;
+}
+
+.macro-form-folder-picker-trigger > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .macro-form-folder-picker-menu {
@@ -117,7 +164,8 @@
 
 .macro-form-folder-picker-option:hover,
 .macro-form-folder-picker-option:focus-visible,
-.macro-form-folder-picker-option.is-selected {
+.macro-form-folder-picker-option.is-selected,
+.macro-form-folder-picker-option.is-active {
   border-color: var(--color-border-hover);
   background: var(--color-bg-tertiary);
   color: var(--color-primary);

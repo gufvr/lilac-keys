@@ -43,6 +43,13 @@ Use folders and subfolders to organize snippets by topic, project, or workflow.
 
 You can create, rename, and organize folders, move snippets between them, reorder folders or snippets by dragging them, and export complete folder structures.
 
+When creating or editing a snippet, **Buscar pasta** finds existing folders by
+partial name, ignoring case, accents and repeated spaces. Emoji can be searched
+alone or together with the name in either order, such as `MYEDUZZ 🟦`. Results
+show the full folder path to distinguish identical names. Use the arrow keys and
+Enter to select; Escape closes the results. **Sem pasta** keeps the snippet at
+the root. The existing folder tree remains available below the search field.
+
 ## Import and export
 
 Import and export snippets using JSON or TXT files.
