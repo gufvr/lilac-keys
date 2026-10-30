@@ -25,6 +25,33 @@
 5. Optionally, organize the snippet inside a folder.
 6. Type the shortcut in a compatible text field and press `Shift + Space`.
 
+## Editing snippets
+
+Type `- ` or `1. ` at the start of a paragraph to create a bulleted or numbered
+list. Other numbers remain literal outside a list. Enter continues a list; Enter
+on an empty item exits it. Tab and Shift+Tab adjust nesting. Backspace keeps the
+browser's native behavior. Newly generated empty list items and exit paragraphs
+are kept for editing but omitted from saved HTML while empty; deliberate blank
+lines and existing snippets are preserved.
+
+Click a link, or place the caret inside it and press Ctrl/Command+K, to change
+its URL or remove the link while keeping the text. The same dialog creates links
+from selected text. New addresses must use HTTPS, mailto or tel. Existing links
+are preserved until explicitly changed. Cancel and Escape restore the selection.
+
+You can also select existing text and paste a single HTTPS, mailto or tel URL to
+make that text a link without replacing its label or inline formatting. Ordinary
+text, image pastes and pastes without a text selection keep their existing behavior.
+
+Rich HTML copied from other applications keeps the browser's formatted paste.
+When the clipboard contains Markdown instead, common `**bold**` / `__bold__`
+markers and bulleted or numbered lists are converted to semantic HTML on paste.
+Code and placeholders are protected. This conversion applies only to new pastes;
+it does not migrate or reinterpret existing snippets, imports or exports.
+
+Run `npm run test:editor-browser` for real Chromium editing checks in an isolated
+Edge profile; `LILAC_TEST_BROWSER` can specify another Chromium executable.
+
 ## Placeholders
 
 Use placeholders to create editable sections inside a snippet.

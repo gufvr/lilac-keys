@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RichTextLinkDialog } from "./RichTextLinkDialog";
+import { pasteMarkdownText } from "../utils/richTextPaste";
+import { convertAutomaticList, currentListItem, editorRangeFromOffsets, editorSelectionOffsets, isEmptyEditingBlock, pasteLinkOverSelection, selectionBlock, serializeRichText } from "../utils/richTextEditing";
 import {
   isSupportedImageFile,
   MAX_EMBEDDED_IMAGE_BYTES,
@@ -63,26 +66,59 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const savedSelectionRef = useRef<Range | null>(null);
+  const lastPublishedRef = useRef<string | null>(null);
+  const draftBlockRef = useRef<HTMLElement | null>(null);
+  const pendingListEnterRef = useRef(false);
+  const [linkEdit, setLinkEdit] = useState<{ range: Range | null; anchor: HTMLAnchorElement | null; href: string } | null>(null);
   const [imageWarning, setImageWarning] = useState<string>();
 
   useEffect(() => {
+    // Our serialized value can omit a native empty landing block. Keep that
+    // live block for the caret and undo history until the next real edit.
+    if (value === lastPublishedRef.current) return;
+    lastPublishedRef.current = null;
     if (editorRef.current && editorRef.current.innerHTML !== value) {
       editorRef.current.innerHTML = value;
+      draftBlockRef.current = null;
+      pendingListEnterRef.current = false;
+      savedSelectionRef.current = null;
+      setLinkEdit(null);
     }
   }, [value]);
 
-  const publishEditorValue = () => {
+  const publishEditorValue = useCallback(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const sanitized = sanitizeMacroImages(editor.innerHTML);
+    if (pendingListEnterRef.current) {
+      const block = selectionBlock(editor);
+      draftBlockRef.current = block && block !== editor && isEmptyEditingBlock(block) ? block : null;
+      pendingListEnterRef.current = false;
+    }
+    const sanitized = sanitizeMacroImages(serializeRichText(editor, draftBlockRef.current));
     if (sanitized.removedImages > 0) {
       editor.innerHTML = sanitized.html;
       setImageWarning(
         "Uma imagem incompatível, muito grande ou acima do limite foi removida.",
       );
     }
+    lastPublishedRef.current = sanitized.html;
     onChange(sanitized.html);
-  };
+  }, [onChange]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const beforeInput = (event: InputEvent) => {
+      if (event.isComposing) return;
+      pendingListEnterRef.current = (event.inputType === "insertParagraph" && Boolean(currentListItem(editor))) ||
+        (event.inputType === "historyRedo" && Boolean(draftBlockRef.current));
+      if (event.inputType !== "historyUndo" && event.inputType !== "historyRedo" &&
+          selectionBlock(editor) === draftBlockRef.current) draftBlockRef.current = null;
+      if (convertAutomaticList(editor, event)) publishEditorValue();
+    };
+    editor.addEventListener("beforeinput", beforeInput);
+    return () => editor.removeEventListener("beforeinput", beforeInput);
+  }, [publishEditorValue]);
 
   const executeCommand = (command: EditorCommand) => {
     editorRef.current?.focus();
@@ -90,13 +126,50 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     publishEditorValue();
   };
 
-  const insertLink = () => {
-    const url = window.prompt("Digite a URL do link");
-    if (!url) return;
+  const insertLink = (clickedAnchor?: HTMLAnchorElement) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = window.getSelection();
+    const current = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const range = current && editor.contains(current.commonAncestorContainer)
+      ? current.cloneRange() : savedSelectionRef.current?.cloneRange() ?? null;
+    const element = range?.startContainer.nodeType === 1 ? range.startContainer as Element : range?.startContainer.parentElement;
+    const candidate = clickedAnchor ?? element?.closest("a") ?? null;
+    const anchor = candidate && editor.contains(candidate) ? candidate : null;
+    setLinkEdit({ range, anchor, href: anchor?.getAttribute("href") ?? "" });
+  };
 
-    editorRef.current?.focus();
-    document.execCommand("createLink", false, url);
+  const closeLink = (restoreRange = linkEdit?.range) => {
+    const editor = editorRef.current;
+    if (editor && restoreRange && editor.contains(restoreRange.commonAncestorContainer)) {
+      editor.focus();
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(restoreRange);
+      savedSelectionRef.current = restoreRange.cloneRange();
+    } else editor?.focus();
+    setLinkEdit(null);
+  };
+
+  const applyLink = (href?: string): boolean => {
+    const editor = editorRef.current;
+    if (!editor || !linkEdit) return false;
+    const offsets = linkEdit.range ? editorSelectionOffsets(editor, linkEdit.range) : null;
+    let range = linkEdit.range;
+    if (linkEdit.anchor) {
+      if (!editor.contains(linkEdit.anchor)) return false;
+      range = document.createRange();
+      range.selectNodeContents(linkEdit.anchor);
+    }
+    if (!range || range.collapsed || !editor.contains(range.commonAncestorContainer)) return false;
+    editor.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const changed = document.execCommand(href === undefined ? "unlink" : "createLink", false, href);
+    if (!changed) return false;
     publishEditorValue();
+    closeLink(offsets ? editorRangeFromOffsets(editor, offsets) : linkEdit.range);
+    return true;
   };
 
   const rememberEditorSelection = () => {
@@ -186,14 +259,24 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
     const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
       file.type.startsWith("image/"),
     );
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) {
+      const editor = editorRef.current;
+      const text = event.clipboardData.getData("text/plain");
+      if (!event.defaultPrevented && editor && (pasteLinkOverSelection(editor, text) ||
+          pasteMarkdownText(editor, text, event.clipboardData.getData("text/html")))) {
+        event.preventDefault();
+        publishEditorValue();
+        rememberEditorSelection();
+      }
+      return;
+    }
     event.preventDefault();
     rememberEditorSelection();
     void insertImageFiles(imageFiles);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key.toLowerCase() === "k" && event.ctrlKey) {
+    if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       insertLink();
       return;
@@ -201,8 +284,7 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
 
     if (event.key !== "Tab" || !editorRef.current) return;
 
-    const selection = window.getSelection();
-    const listItem = getListItem(selection?.anchorNode, editorRef.current);
+    const listItem = currentListItem(editorRef.current);
 
     if (!listItem) return;
 
@@ -241,7 +323,7 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
           aria-label="Inserir link"
           title="Inserir link"
           onMouseDown={(event) => event.preventDefault()}
-          onClick={insertLink}
+          onClick={() => insertLink()}
         >
           <span className="material-symbols-outlined">link</span>
         </button>
@@ -279,8 +361,23 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         onInput={publishEditorValue}
+        onMouseUp={rememberEditorSelection}
+        onKeyUp={rememberEditorSelection}
+        onClick={(event) => {
+          const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+          if (anchor && event.currentTarget.contains(anchor)) {
+            event.preventDefault();
+            insertLink(anchor);
+          }
+        }}
+        onAuxClick={(event) => {
+          if (event.target instanceof Element && event.target.closest("a")) event.preventDefault();
+        }}
         data-placeholder="Digite o texto que será inserido quando o atalho for usado..."
       />
+      {linkEdit && <RichTextLinkDialog href={linkEdit.href} existing={Boolean(linkEdit.anchor)}
+        canApply={Boolean(linkEdit.anchor || (linkEdit.range && !linkEdit.range.collapsed))}
+        onApply={applyLink} onRemove={() => applyLink()} onCancel={closeLink} />}
     </div>
   );
 }
@@ -293,18 +390,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
       reject(reader.error ?? new Error("Falha ao ler a imagem"));
     reader.readAsDataURL(file);
   });
-}
-
-function getListItem(
-  node: Node | null | undefined,
-  editor: HTMLElement,
-): HTMLLIElement | null {
-  let current: Node | null = node ?? null;
-  while (current && current !== editor) {
-    if (current instanceof HTMLLIElement) return current;
-    current = current.parentNode;
-  }
-  return null;
 }
 
 function indentListItem(listItem: HTMLLIElement): void {
