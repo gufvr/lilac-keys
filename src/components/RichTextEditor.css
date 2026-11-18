@@ -53,6 +53,10 @@
   overflow-wrap: anywhere;
 }
 
+.rich-text-content p {
+  margin: 0 0 1em;
+}
+
 .rich-text-content:empty::before {
   content: attr(data-placeholder);
   color: var(--color-text-tertiary);

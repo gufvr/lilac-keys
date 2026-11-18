@@ -293,6 +293,15 @@ try {
       assert.equal((await read()).html, "<p>Base</p>");
     }
   });
+  await test("paragraph spacing remains visible in the rich-text editor", async () => {
+    await mount("<p>Primeiro parágrafo</p><p>Segundo parágrafo</p>");
+    const spacing = await evaluate(`(() => {
+      const paragraphs = document.querySelectorAll(".rich-text-content p");
+      return { count: paragraphs.length, margin: getComputedStyle(paragraphs[0]).marginBottom };
+    })()`);
+    assert.equal(spacing.count, 2);
+    assert.ok(parseFloat(spacing.margin) > 0, `Expected visible paragraph spacing, got ${spacing.margin}`);
+  });
   await test("plain HTML wrappers with Markdown convert, while code destinations remain literal", async () => {
     await mount("<p><br></p>"); await select("p");
     assert.equal(await paste("**Título**", "<div>**Título**</div>"), true);
