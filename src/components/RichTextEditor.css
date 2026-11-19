@@ -53,7 +53,8 @@
   overflow-wrap: anywhere;
 }
 
-.rich-text-content p {
+.rich-text-content > p,
+.rich-text-content > div {
   margin: 0 0 1em;
 }
 

@@ -371,6 +371,7 @@ export function prepareHubSpotHtml(
   for (const marker of Array.from(container.querySelectorAll("[data-lilackeys-batch-end]"))) marker.remove();
   const imageStats = sanitizeElements(container, ownerDocument);
   normalizeHubSpotBlockStructure(container, ownerDocument);
+  addParagraphSpacing(container, ownerDocument);
   normalizeHubSpotBlankParagraphs(container, ownerDocument);
   addPlaceholderMarkers(container, ownerDocument);
   const sanitizedHtml = container.innerHTML;
@@ -381,6 +382,32 @@ export function prepareHubSpotHtml(
     rejectedImages:
       imageStats.rejectedImages + preSanitizedImages.removedImages,
   };
+}
+
+function addParagraphSpacing(root: HTMLElement, ownerDocument: Document): void {
+  const paragraphs = Array.from(root.children).filter(
+    (element): element is HTMLParagraphElement => element.tagName === "P",
+  );
+  for (let index = paragraphs.length - 1; index > 0; index -= 1) {
+    const paragraph = paragraphs[index];
+    const previous = paragraphs[index - 1];
+    if (
+      paragraph.parentElement !== root ||
+      isBlankParagraph(paragraph) ||
+      previous.nextElementSibling !== paragraph ||
+      isBlankParagraph(previous)
+    ) continue;
+    const spacer = ownerDocument.createElement("p");
+    spacer.append(ownerDocument.createElement("br"));
+    paragraph.before(spacer);
+  }
+}
+
+function isBlankParagraph(paragraph: Element): boolean {
+  return (
+    /^[\s\u200b\ufeff]*$/.test(paragraph.textContent ?? "") &&
+    !paragraph.querySelector("img")
+  );
 }
 
 function normalizeHubSpotBlankParagraphs(root: HTMLElement, ownerDocument: Document): void {

@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { RichTextEditor } from "../../src/components/RichTextEditor";
 import { MacroForm } from "../../src/components/MacroForm/MacroForm";
+import "../../src/components/MacroCard/MacroCard.css";
+import { prepareHubSpotHtml } from "../../src/content/editors/hubspotEditor";
 
 const container = document.createElement("div");
 document.body.append(container);
@@ -36,6 +38,7 @@ Object.assign(window, {
         onCancel={() => { closed += 1; }} />));
     },
     read: () => ({ html: document.querySelector(".rich-text-content")?.innerHTML, published, saved, closed }),
+    prepareHubSpot(html: string) { return prepareHubSpotHtml(html, document).html; },
     replace(html: string) { flushSync(() => replaceValue(html)); },
     select(selector = ".rich-text-content", start?: number, end?: number) {
       const element = document.querySelector(selector);

@@ -150,9 +150,10 @@ test("ProseMirror real preserva parágrafos da regressão Ag2D após colagem e r
     );
     assert.equal(result.inserted, true, result.failureReason);
     assert.equal(releasedShiftKeyCode, 16);
-    assert.equal(harness.view.state.doc.childCount, 6);
+    assert.equal(harness.view.state.doc.childCount, 7);
     assert.equal(harness.view.state.doc.child(1).content.size, 0);
     assert.equal(harness.view.state.doc.child(3).content.size, 0);
+    assert.equal(harness.view.state.doc.child(5).content.size, 0);
     assert.equal(harness.view.state.doc.firstChild!.textContent, "ANTES Transferência registrada.");
     assert.equal(harness.view.state.doc.lastChild!.textContent, "À disposição! 💙 DEPOIS");
     assert.equal(harness.view.dom.querySelector("a strong")?.textContent, "perfil");
@@ -347,7 +348,7 @@ test("ProseMirror preserva conteúdo e cursor em 25/50/100/128 KB", async (conte
       const result = await harness.insert(html);
       const duration = performance.now() - started;
       assert.equal(result.inserted, true, result.failureReason);
-      assert.equal(harness.view.state.doc.childCount, Math.floor(kilobytes * 1024 / unit.length));
+      assert.equal(harness.view.state.doc.childCount, 2 * Math.floor(kilobytes * 1024 / unit.length) - 1);
       assert.equal(harness.view.state.doc.textContent.endsWith(" restante"), true);
       assert.equal(harness.window.getSelection()!.isCollapsed, true);
       const after = harness.window.document.createRange();
@@ -397,6 +398,20 @@ test("preserva parágrafos vazios nas extremidades e imagens sem texto", async (
       assert.equal(harness.window.getSelection()!.isCollapsed, true);
     } finally { harness.close(); }
   }
+});
+
+test("HubSpot mantém o parágrafo espaçador entre parágrafos da macro", async () => {
+  const harness = createHarness();
+  try {
+    const result = await harness.insert("<p>Primeiro</p><p>Segundo</p>");
+    assert.equal(result.inserted, true, result.failureReason);
+    const paragraphs = Array.from(harness.view.dom.querySelectorAll(":scope > p"));
+    assert.deepEqual(paragraphs.map(paragraph => paragraph.textContent), [
+      "Primeiro",
+      "",
+      "Segundo",
+    ]);
+  } finally { harness.close(); }
 });
 
 test("ProseMirror real mantém listas independentes, aninhadas e parágrafos das regressões PJPJ/PFPJ/SaquePJ", async () => {
@@ -453,7 +468,7 @@ test("ProseMirror real insere macro structured de 5 KB completa em uma transaç�
     const result = await harness.insert(html);
     assert.equal(result.inserted, true, result.failureReason);
     assert.equal(result.batchDurationsMs.length, 1);
-    assert.equal(harness.view.state.doc.childCount, 51);
+    assert.equal(harness.view.state.doc.childCount, 101);
     assert.equal(harness.view.dom.querySelectorAll("strong").length, 51);
     assert.equal(harness.view.state.doc.lastChild!.textContent.startsWith("Etapa 50"), true);
   } finally { harness.close(); }
@@ -618,10 +633,11 @@ test("macro rich com dois parágrafos dentro do placeholder preenchido mantém l
     const snapshot = buildMacroSnapshot([{ id: "m", nome: "Fixture", atalho: "CODE", textoExpandido: '<p>Saque confirmado!</p><p>Veja o <strong>Histórico</strong>.</p>' }]);
     assert.equal(snapshot.entries[0].hubspotPlan.strategy, "rich");
     assert.equal(await expandHubSpotMacro(harness.view.dom, snapshot), "expanded");
-    assert.equal(harness.view.state.doc.childCount, 4);
+    assert.equal(harness.view.state.doc.childCount, 5);
     assert.equal(harness.view.state.doc.child(1).textContent, "Saque confirmado!");
-    assert.equal(harness.view.state.doc.child(2).textContent, "Veja o Histórico.");
-    assert.equal(harness.view.state.doc.child(3).textContent, "Att,Gustavo");
+    assert.equal(harness.view.state.doc.child(2).content.size, 0);
+    assert.equal(harness.view.state.doc.child(3).textContent, "Veja o Histórico.");
+    assert.equal(harness.view.state.doc.child(4).textContent, "Att,Gustavo");
     const after = harness.window.document.createRange();
     const caret = harness.window.getSelection()!.getRangeAt(0);
     after.setStart(caret.endContainer, caret.endOffset); after.setEnd(harness.view.dom, harness.view.dom.childNodes.length);

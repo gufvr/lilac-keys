@@ -265,6 +265,27 @@ test("linhas vazias mantêm quebras sem NBSP/ZWSP/BOM ou marcadores técnicos", 
   assert.doesNotMatch(prepared.html, /\u200b|\ufeff|data-lilackeys-batch-end/);
 });
 
+test("parágrafos adjacentes recebem separação explícita sem duplicar linhas vazias", () => {
+  const document = createDocument();
+  const adjacent = prepareHubSpotHtml(
+    "<p>Primeiro</p><p>Segundo</p><p>Terceiro</p>",
+    document,
+  );
+  assert.equal(
+    adjacent.html,
+    "<p>Primeiro</p><p><br></p><p>Segundo</p><p><br></p><p>Terceiro</p>",
+  );
+
+  const alreadySpaced = prepareHubSpotHtml(
+    "<p>Primeiro</p><p><br></p><p>Segundo</p>",
+    document,
+  );
+  assert.equal(alreadySpaced.html, "<p>Primeiro</p><p><br></p><p>Segundo</p>");
+
+  const hardBreaks = prepareHubSpotHtml("<p>Primeira linha<br>Segunda linha</p>", document);
+  assert.equal(hardBreaks.html, "<p>Primeira linha<br>Segunda linha</p>");
+});
+
 test("reconhece atributo Remirror no ancestral do host interno", () => {
   const document = createDocument();
   const root = document.createElement("div");
@@ -686,8 +707,8 @@ test("isola listas e preserva a ordem e a hierarquia da macro de regressão", ()
   reconstructed.innerHTML = prepared.batches.join("");
   const topLevel = Array.from(reconstructed.children);
   assert.deepEqual(
-    topLevel.slice(0, 10).map((element) => element.tagName),
-    ["P", "OL", "P", "P", "P", "UL", "P", "UL", "OL", "P"],
+    topLevel.map((element) => element.tagName),
+    ["P", "OL", "P", "P", "P", "P", "P", "UL", "P", "UL", "OL", "P", "P", "P"],
   );
   assert.deepEqual(
     Array.from(topLevel[1].children).map((item) => item.textContent),
@@ -695,7 +716,7 @@ test("isola listas e preserva a ordem e a hierarquia da macro de regressão", ()
   );
   assert.equal(reconstructed.querySelectorAll("li:empty").length, 0);
   assert.equal(reconstructed.querySelectorAll("li > p").length, 0);
-  assert.equal(topLevel[9].textContent, "Depois do envio, avise aqui. 😊");
+  assert.equal(topLevel[11].textContent, "Depois do envio, avise aqui. 😊");
 });
 
 test("mantém ul e ol independentes quando aparecem em sequência", () => {
@@ -1302,7 +1323,9 @@ test("normaliza blocos div sem achatar parágrafos e listas", () => {
   assert.equal(
     prepared.html,
     '<p>Notícia inicial.</p><p><br></p><p>Valores disponíveis:</p>' +
+      '<p><br></p>' +
       '<p><span data-lilackeys-placeholder="true">%Print_Extrato%</span></p>' +
+      '<p><br></p>' +
       '<p>O fluxo será este:</p><ul><li>Solicite o saque.</li>' +
       '<li>Avise por aqui.</li></ul><p>Mensagem posterior.</p>',
   );
@@ -1345,8 +1368,8 @@ test("preserva macros existentes baseadas em parágrafos", () => {
   const container = document.createElement("div");
   container.innerHTML = prepared.html;
 
-  assert.equal(container.querySelectorAll("p").length, 6);
-  assert.equal(container.querySelectorAll("p > br").length, 2);
+  assert.equal(container.querySelectorAll("p").length, 7);
+  assert.equal(container.querySelectorAll("p > br").length, 3);
   assert.equal(container.querySelectorAll("a strong").length, 1);
   assert.equal(
     container.querySelectorAll("[data-lilackeys-placeholder]").length,

@@ -294,13 +294,65 @@ try {
     }
   });
   await test("paragraph spacing remains visible in the rich-text editor", async () => {
-    await mount("<p>Primeiro parágrafo</p><p>Segundo parágrafo</p>");
+    await mount("<p>Primeiro parágrafo</p><div>Segundo parágrafo</div>");
     const spacing = await evaluate(`(() => {
-      const paragraphs = document.querySelectorAll(".rich-text-content p");
-      return { count: paragraphs.length, margin: getComputedStyle(paragraphs[0]).marginBottom };
+      const paragraphs = document.querySelectorAll(".rich-text-content > p, .rich-text-content > div");
+      return Array.from(paragraphs).map(paragraph => getComputedStyle(paragraph).marginBottom);
     })()`);
-    assert.equal(spacing.count, 2);
-    assert.ok(parseFloat(spacing.margin) > 0, `Expected visible paragraph spacing, got ${spacing.margin}`);
+    assert.equal(spacing.length, 2);
+    assert.ok(spacing.every(margin => parseFloat(margin) > 0), `Expected visible paragraph spacing, got ${spacing}`);
+  });
+  await test("macro preview preserves spacing for paragraph and div blocks", async () => {
+    const spacing = await evaluate(`(() => {
+      const preview = document.createElement("div");
+      preview.className = "macro-card-text";
+      preview.innerHTML = "<p>Primeiro parágrafo</p><div>Segundo parágrafo</div>";
+      document.body.append(preview);
+      return Array.from(preview.children).map(paragraph => getComputedStyle(paragraph).marginBottom);
+    })()`);
+    assert.equal(spacing.length, 2);
+    assert.ok(spacing.every(margin => parseFloat(margin) > 0), `Expected visible macro preview spacing, got ${spacing}`);
+  });
+  await test("Shift+Enter remains a soft line break in HubSpot HTML", async () => {
+    await mount("");
+    await select();
+    await type("Primeira linha");
+    await key("Enter", 8);
+    await type("Segunda linha");
+    const result = await evaluate(`(() => {
+      const html = editorFixture.prepareHubSpot(editorFixture.read().published);
+      const parsed = new DOMParser().parseFromString(html, "text/html");
+      return {
+        html,
+        paragraphs: parsed.querySelectorAll("p").length,
+        breaks: parsed.querySelectorAll("p > br").length,
+        text: parsed.body.textContent,
+      };
+    })()`);
+    assert.equal(result.paragraphs, 1, result.html);
+    assert.equal(result.breaks, 1, result.html);
+    assert.equal(result.text, "Primeira linhaSegunda linha");
+  });
+  await test("Shift+Enter inside a list keeps the line break in its list item", async () => {
+    await mount("<ul><li>Primeira linha</li></ul>");
+    await select("li");
+    await key("Enter", 8);
+    await type("Segunda linha");
+    const result = await evaluate(`(() => {
+      const html = editorFixture.prepareHubSpot(editorFixture.read().published);
+      const parsed = new DOMParser().parseFromString(html, "text/html");
+      return {
+        html,
+        lists: parsed.querySelectorAll("ul").length,
+        items: parsed.querySelectorAll("ul > li").length,
+        breaks: parsed.querySelectorAll("li > br").length,
+        text: parsed.querySelector("li")?.textContent,
+      };
+    })()`);
+    assert.equal(result.lists, 1, result.html);
+    assert.equal(result.items, 1, result.html);
+    assert.equal(result.breaks, 1, result.html);
+    assert.equal(result.text, "Primeira linhaSegunda linha");
   });
   await test("plain HTML wrappers with Markdown convert, while code destinations remain literal", async () => {
     await mount("<p><br></p>"); await select("p");

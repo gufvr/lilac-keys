@@ -276,6 +276,14 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" && event.shiftKey && editorRef.current) {
+      if (insertSoftLineBreak(editorRef.current)) {
+        event.preventDefault();
+        publishEditorValue();
+      }
+      return;
+    }
+
     if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       insertLink();
@@ -380,6 +388,24 @@ export function RichTextEditor({ id, value, onChange }: RichTextEditorProps) {
         onApply={applyLink} onRemove={() => applyLink()} onCancel={closeLink} />}
     </div>
   );
+}
+
+function insertSoftLineBreak(editor: HTMLElement): boolean {
+  const originalHtml = editor.innerHTML;
+  if (editor.ownerDocument.execCommand("insertLineBreak", false)) return true;
+  if (editor.innerHTML !== originalHtml) return true;
+  const selection = editor.ownerDocument.getSelection();
+  if (!selection?.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return false;
+  range.deleteContents();
+  const lineBreak = editor.ownerDocument.createElement("br");
+  range.insertNode(lineBreak);
+  range.setStartAfter(lineBreak);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

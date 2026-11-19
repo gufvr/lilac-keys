@@ -181,6 +181,11 @@
   word-wrap: break-word;
 }
 
+.macro-card-text > p,
+.macro-card-text > div {
+  margin: 0 0 1em;
+}
+
 .macro-card-text blockquote {
   margin: 0.5rem 0;
   padding-left: 0.75rem;
